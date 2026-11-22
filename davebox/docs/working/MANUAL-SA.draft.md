@@ -196,7 +196,7 @@ Press [Play] to start and stop. With modifiers:
 
 - To restart from the top, hold [Shift] and press [Play].
 - In Track View, hold [Loop] and press [Play] to restart with the current clip at the page you are
-  looking at.
+  looking at. A page outside the loop wraps into it, so the clip always restarts inside its loop.
 - To turn the metronome on or off, hold [Mute] and press [Play].
 - To stop every clip while playing, hold [Delete] and press [Play]. While stopped, the same gesture
   sends a MIDI panic.
@@ -398,7 +398,7 @@ On AUTOMATION, hold [Delete] and click the jog to clear the lane under the curso
 
 To reset every parameter in the bank you are on, hold [Delete] and click the jog. One-shot actions
 (Stretch, Shift, Legato and Crop) are left alone, and on a paged bank only the page showing is
-reset. This doesn't work on ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING banks.
+reset. Each parameter goes back to the value a new clip starts with. This doesn't work on ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING banks.
 On a drum track's RPT GROOVE bank, or on any bank while Note Repeat is on, it resets the selected
 lane's groove.
 
@@ -486,7 +486,7 @@ when you quit or suspend, until you remove some clips.
 ### 5.2.1 Leaving and Suspending
 
 To leave dAVEBOx and hand the device back to official Schwung, hold [Shift] and press [Back] from
-anywhere, or choose Quit in Project Settings. Either one saves first.
+anywhere and answer Yes to QUIT dAVEBOx?, or choose Quit in Project Settings. Either one saves first.
 
 To use Move while dAVEBOx keeps playing in the background, choose Suspend session in Project
 Settings. To come back, hold [Shift] and hold [Step 13] for half a second, or press [Shift] +
@@ -513,8 +513,8 @@ The other kinds of preset and snapshot are compared in
 ## 5.4 Templates
 
 A template is a starting point for new projects. To save one, choose Save as Template... in Project
-Settings. It keeps each track's instrument, effects, MACROS and track settings, and the project
-settings. No clips, notes or automation come along, and every sequencer bank starts at its default.
+Settings. It keeps each track's instrument, effects, MACROS and track settings, its groove amounts and
+Input Quantize, and the project settings, including a loaded groove. No clips, notes or automation come along, and every sequencer bank starts at its default.
 A Slicer comes along whole, sample included; Audio tracks arrive empty.
 
 To use a template, see [Creating a Project](#512-creating-a-project). To rename, replace or delete
@@ -684,7 +684,7 @@ To stop the playing clip at the end of its page, press its side button; press it
 The side buttons take the gestures in [Copy, Delete and Undo](#37-copy-delete-and-undo):
 
 - [Copy] and a side button, then another side button, copies the clip to that slot. [Shift] and [Copy] cuts it.
-- [Delete] and a side button clears the clip's notes and automation, and frees its length for the next recording.
+- [Delete] and a side button clears the clip's notes, step conditions and automation, and frees its length for the next recording.
 - [Shift], [Delete] and a side button resets the clip: notes and all parameters.
 
 ## 7.4 Clip Length and the Loop
@@ -715,9 +715,12 @@ Hold [Loop] for the loop view. The step buttons now stand for pages, and a page 
 
 Notes outside the loop are kept, and return when you widen it.
 
+A clip that is playing stays in time when its length or loop changes: it carries on from where it
+would be had it always had the new length.
+
 To keep the loop view up hands-free, tap [Loop] instead of holding it; [Loop] blinks white and the pads keep playing. Press [Loop] or [Back] to close it.
 
-Note that a press of [Loop] that already does something else still does only that. On a drum track with a latched repeat it releases the repeat, and while the arpeggiator's latch holds notes it clears them.
+Note that a press of [Loop] that already does something else still does only that. On a drum track with a latched repeat it releases the repeat, and while LIVE ARP's latch holds notes it clears them. With pads held on a melodic or Slicer track, it latches or unlatches LIVE ARP (see [LIVE ARP](#1351-live-arp)).
 
 ### 7.4.3 Copying Pages
 
@@ -918,11 +921,11 @@ If the last thing you did while holding the step was turn a knob to set a lock, 
 
 > 🎬 **Video:** [Tutorial 3.4: Steps that decide for themselves](https://youtu.be/36-v3uYKR78?t=261) (from 4:21)
 
-- Iteration (Iter) plays the step only on certain passes of the loop: `2:3` plays on the 2nd pass of every three. The counter resets when you stop the transport and press [Play] again.
+- Iteration (Iter) plays the step only on certain passes of the loop: `2:3` plays on the 2nd pass of every three. The counter resets when you stop the transport and press [Play] again; [Undo] leaves it where it is.
 - Probability (Prob) gives the step a chance of playing, from 100 % down to 1 %. The roll is per note, so chords thin out unevenly.
 - Ratchet (Ratch) retriggers the step 2, 3 or 4 times within its slot.
 
-Removing the step's last note clears its conditions.
+Removing the step's last note clears its conditions, and so does clearing the clip. Stretch, Shift, doubling the loop and copying a page take each step's conditions along with its notes.
 
 ---
 
@@ -958,6 +961,8 @@ Each lane has its own loop length, so lanes of different lengths make a polyrhyt
 
 To set the selected lane's length, hold [Loop] and turn the jog, or use the [loop view](#74-clip-length-and-the-loop). On the ALL LANES bank, these set every lane at once.
 
+Hits and their conditions past a lane's loop are kept, and saved with the project, ready for when you widen it.
+
 The transforms need a lane's loop to start on [Step 1]. To crop, touch knob 6 on DRUM LANE for the selected lane, or knob 5 on ALL LANES for every lane, and click the jog.
 
 ## 9.4 Note Repeat
@@ -991,9 +996,10 @@ Per-step velocity and timing are on the [RPT GROOVE bank](#1352-rpt-groove).
 The lane pads take the gestures in [Copy, Delete and Undo](#37-copy-delete-and-undo), and a mute and solo of their own:
 
 - To copy a lane, hold [Copy], tap its pad, then tap another lane. The destination keeps its own MIDI note. [Shift] and [Copy] cuts.
-- To clear a lane's hits, hold [Delete] and tap its pad.
+- To clear a lane's hits and their conditions, hold [Delete] and tap its pad.
 - To reset a lane, hold [Shift] and [Delete] and tap its pad. This resets its hits, length, loop, effects and repeat groove, but keeps its sound.
 - To mute a lane, hold [Mute] and tap its pad. To solo it, hold [Shift] and [Mute] and tap its pad.
+  A muted lane does not repeat, even while you hold its pad in a Note Repeat mode.
 - To clear the track's lane mutes and solos, hold [Delete] and press [Mute].
 
 ---
@@ -1024,7 +1030,7 @@ Step recording places notes one step at a time, without the transport running. I
 
 To start, stop the transport and hold [Shift] and press [Record]. A blinking white cursor starts at the first step of the page you are viewing. Tap a pad, or several for a chord; the cursor moves on when you let go.
 
-To tie a note longer, press [Right] while holding its pads; [Left] with the pads held takes one step back off.
+To tie a note longer, press [Right] while holding its pads; each press adds one step at the clip's resolution. [Left] with the pads held takes one step back off.
 
 To enter a rest, press [Right] alone. [Left] alone steps back and erases what you entered there in this session; notes already in the clip stay. The cursor stops at the clip's last step and never wraps.
 
@@ -1156,7 +1162,7 @@ Legato, Crop and Import MIDI are actions: touch the knob and click the jog. Lega
 
 Zoom, Stretch, Shift and Legato need the loop to start at step 1. If it starts later, Stretch says LOOP STARTS AFTER STEP 1 / CROP FIRST. Crop puts the loop at step 1.
 
-Input Quantize is one value per track, shared with the ALL LANES bank.
+Input Quantize is one value per track, shared with the ALL LANES bank. It applies to notes recorded from [LIVE ARP](#1351-live-arp) too.
 
 ### 12.1.1 Direction and Reverse Style
 
@@ -1291,7 +1297,7 @@ DELAY echoes every note in rhythm, on melodic and drum tracks.
 
 Clock Feedback makes each echo come sooner (negative values) or later (positive values) than the last, like a bouncing ball.
 
-On a drum track DELAY has no pitch controls, and knobs 5–7 are Gate, Clock Feedback and Retrigger.
+On a drum track DELAY has no pitch controls, and knobs 5–7 are Gate (as knob 6 above), Clock Feedback (±100) and Retrigger.
 
 ## 13.4 SEQ ARP
 
@@ -1307,7 +1313,7 @@ SEQ ARP is an arpeggiator that runs after DELAY, on both sequenced and live note
 | 4 · GATE | Note length. Under 100 % shortens, over lengthens. | 100 % |
 | 5 · STEPS | How silenced steps behave: rest (Mute) or skip (Step). | Mute |
 | 6 · RETRG | Restarts the arp on each new note. | On |
-| 7 · SYNC | Waits for the next rate boundary. | On |
+| 7 · SYNC | Waits for the next rate boundary. Off starts on the note. | On |
 
 The extra octaves set by OCT join the notes the style orders. For example, Down with OCT at +1 plays from the top octave down.
 
@@ -1333,9 +1339,11 @@ LIVE ARP arpeggiates live pad and external input only, on melodic tracks and Sli
 
 The controls match [SEQ ARP](#134-seq-arp), except that Retrigger defaults to Off. Knob 8 adds Latch (LATCH), which keeps the arp running after you let go of the pads.
 
-- To latch, press [Loop] while holding pads. Press [Loop] again with pads held to unlatch.
+- To latch, press [Loop] while holding pads (with a LIVE ARP style set). Press [Loop] again with pads held to unlatch.
 - Press [Loop] with no pads held to clear the latched notes. Latch stays on.
 - Stop, [Delete] + [Play], or switching to Session View unlatches.
+
+Latch is saved with the project.
 
 On a Slicer, Step replaces Oct; see [Slicer track banks](#175-the-banks). Audio tracks have no LIVE ARP.
 
@@ -1552,7 +1560,7 @@ When you copy to another track, automation of the track's levels and of dAVEBOx'
 
 A macro can point at Aftertouch or Pitch Bend on any track, and at any MIDI CC on a MIDI track. Setting this up is covered in [The MACROS bank](#241-the-macros-bank).
 
-MIDI target lanes work like any other and appear in the AUTOMATION list by name. Aftertouch played from the pads is recorded on its own, as the PADS row.
+MIDI target lanes work like any other and appear in the AUTOMATION list by name. On Stop and on a clip switch, Pitch Bend returns to centre, Aftertouch to zero, and a CC to its resting value. Aftertouch played from the pads is recorded on its own, as the PADS row.
 
 # 15. Bake and Live Merge
 
@@ -2552,7 +2560,8 @@ To reach a send's effects, touch the Send A or Send B knob and click the jog. Th
 the same on its SEND A and SEND B pages.
 
 On a MIDI track, MIX holds that track's controllers instead: Expression, Pan, Mod, Sustain,
-Program, Bank MSB and Bank LSB.
+Program, Bank MSB and Bank LSB. Program and the banks belong to the clip: a clip sends them when it
+launches, and a copied or cut clip takes them along.
 
 ## 21.2 The Channel Strip
 
@@ -2642,7 +2651,8 @@ are visible at a time; press [+] and [−] to scroll. The knobs are the
 ## 22.1 Launching Clips
 
 To launch a clip, tap its pad. Clips launch at once by default; to quantize, set Launch in
-[Project Settings](#301-project-settings).
+[Project Settings](#301-project-settings). When a clip launches at once, a note the old clip is
+already sounding plays to its end; notes it had not yet started are dropped.
 
 - To stop the playing clip, tap it. It stops at the end of its page. Tap it again to cancel the stop.
 - To cancel a queued launch, tap the queued clip.
@@ -2671,7 +2681,8 @@ Clips copy and clear as described in [Copy, Delete and Undo](#37-copy-delete-and
 
 To launch a scene, press the side button beside its row, or [Step 1] … [Step 16] for any of the 16
 rows. To launch it at the end of the current page, hold [Shift] and press the side button. A track
-whose clip in that row is empty falls silent.
+whose clip in that row is empty falls silent. Every other track switches exactly as if you had
+launched its clip in that row.
 
 - To copy a row, hold [Copy] and press its side button, then press the side button of the target row.
 - To cut a row, hold [Shift] and [Copy] and press its side button.
@@ -2688,6 +2699,9 @@ Each track's Mute Mode, in its [track settings](#207-track-settings), decides wh
 - MIDI stops the track's notes. A live pad you hold still plays through the muted track.
 - Audio silences the track's sound while the notes play on, so tails and held notes are there when
   you unmute. A live pad is silenced too.
+
+One track is soloed at a time: soloing a track un-solos the one before. A solo never pauses the
+[Conductor](#25-the-conductor). Mutes and solos are saved with the project.
 
 ## 23.1 Muting in Track View
 
@@ -2831,6 +2845,8 @@ The track's instrument is parked: choose an instrument from the same picker and 
 everything attached.
 
 To pause conducting, mute the Conductor. The responding tracks snap back to their written pitch.
+Soloing another track does not pause it. When the track stops being the Conductor, the responding
+tracks return to their written pitch too.
 
 ## 25.2 How the Shift Works
 
@@ -2888,7 +2904,7 @@ grid of effects, called mods. It runs in Session View.
 To lock Performance Mode on, tap [Loop]. To use it only while you hold it, hold [Loop].
 
 To leave, tap [Loop], [Back] or [Note/Session]. The captured loop stops, but latched mods stay on for
-next time.
+next time. Stopping the transport stops the captured loop too.
 
 To toggle Latch, hold [Shift] and press [Loop].
 
@@ -3002,7 +3018,7 @@ A Slicer's slices can become a Move drum rack with [Convert to Kit](#174-convert
 
 To export a project as a bundle Ableton Live opens directly, stop the transport, open Project Settings (hold [Shift] and press [Step 2]) and click Export to Ableton.
 
-The `.ablbundle` file lands in the `daveboxSA/davebox-exports` folder; download it from the Files page of the [web manager](#303-davebox-and-official-schwung). The set opens in Live as 8 tracks with 16 scene slots, at the project's tempo and root note. The scale does not come across: the set opens in Major.
+The `.ablbundle` file lands in the `daveboxSA/davebox-exports` folder; download it from the Files page of the [web manager](#303-davebox-and-official-schwung). The set opens in Live as 8 tracks with 16 scene slots, at the project's tempo, root note and scale.
 
 The bundle carries its own samples. Move Drum Racks need Live 12.1 or later. Export is one-way.
 
@@ -3188,7 +3204,7 @@ To edit the EQ, press its picture. Drag the L, M and H points up and down for ga
 
 <img src="img/web-eq.png" alt="The EQ pop-out: the curve, and a point per band to drag">
 
-The Mixer's mute and solo are for the audio, separate from Mute and Solo in the track header's menu, which stop the sequence. MIDI tracks have no mixer or Sound controls.
+The Mixer's mute and solo are for the audio, separate from Mute and Solo in the track header's menu, which stop the sequence. The Mixer's solos add up: several strips can be soloed at once. MIDI tracks have no mixer or Sound controls.
 
 Press a clip chip above the Mixer to launch that track's playing or first clip.
 
@@ -3355,6 +3371,7 @@ While the map is up, [Steps 1–8] switch track. The right-hand pads open the MI
 | Touch a knob + click the jog | Switch that knob to its Alt (Zoom, Nudge, Reverse Style, Algo, Clock Feedback), or open a macro's editor |
 | [Shift] + turn the jog | Switch tracks |
 | [Loop] (hold, or tap to keep it up) | Loop view |
+| Hold pads + [Loop] / [Loop] alone (LIVE ARP) | Latch or unlatch LIVE ARP / clear the latched notes |
 | [Loop] + turn the jog | Clip length |
 | [Loop] + one or two steps | Set the loop to those pages |
 | [Loop] + [Copy] + page, then another page ([Shift] = cut) | Copy a whole page |
@@ -3375,7 +3392,7 @@ While the map is up, [Steps 1–8] switch track. The right-hand pads open the MI
 | [Delete] + [Play] | Deactivate clips (playing) / MIDI panic (stopped) |
 | [Undo] / [Shift] + [Undo] | Undo / redo |
 | [Back]: tap / hold | Step out one level / back to the overview |
-| [Shift] + [Back] | Save and leave dAVEBOx (asks first) |
+| [Shift] + [Back] | Save and leave dAVEBOx (asks QUIT dAVEBOx? first) |
 | Power button | Save and turn the Move off (asks first) |
 | [Note/Session]: tap / hold | On an overview: switch view / peek. Anywhere else: close it and go to Session View |
 | [Shift] + [Step 2] | Project Settings |
@@ -3519,7 +3536,8 @@ Clip pads and side buttons:
 
 - Off (grey on a side button): empty. Dim track color: holds notes.
 - Solid: the current clip, or set to play when you press [Play].
-- Flashing: playing (1/8) or queued (1/16).
+- In Session View, a playing clip pulses on the quarter note, a queued clip blinks on the eighth, and a clip set to stop flickers.
+- In Track View, the side button of the playing clip flashes on the eighth. A queued clip's button doesn't blink.
 - In Session View the side buttons light only as you press them.
 
 Step buttons:
