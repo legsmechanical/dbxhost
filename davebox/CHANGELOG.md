@@ -8,6 +8,60 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Changed
+- **Track solo is exclusive**: soloing a track un-solos the others. **Mixer solo adds**: solo as
+  many mixer strips as you like.
+- **Arp gate above 100 %** now lengthens each note, on SEQ ARP and LIVE ARP; a repeated pitch hands
+  over cleanly instead of cutting the new note.
+- **A scene launch switches each track exactly as launching its clip would**: same place in the
+  clip, same quantize step, and the clip's program change sent.
+- **Random steps play a different pattern each time you open dAVEBOx**, instead of the same
+  "random" first pass every launch.
+- **The browser editor follows the Move's rules**: changing Key/Scale asks "Transpose
+  clips?" as the Move does, and a Move instrument another track already plays is refused.
+
+### Fixed
+
+#### Timing and playback
+- **Every track follows the Conductor on the same step**, whatever its track number.
+- **SEQ ARP with Sync off starts on the note**, as LIVE ARP does.
+- **Restart from a page honours the clip's loop start.**
+- **A recorded LIVE ARP follows the track's own Input Quantize.**
+- **A tied note in step record lasts as long as the clip's resolution says**, at 1/8 and other
+  resolutions.
+- **Changing a playing clip's length keeps it in phase**, from the length knob too.
+
+#### Mute, solo and stop
+- **Solo leaves the Conductor's shift in place.**
+- **Note Repeat respects a muted lane.**
+- **Stop stops the looper.**
+- **Aftertouch and pitch bend return to rest** on Stop and clip switch; an automated CC returns to
+  its resting value like any other automated parameter.
+- **The looper no longer stalls** when captured notes arrive out of order, and stores a live drum
+  hit where you played it.
+
+#### Editing
+- **Shift, Stretch and Double move step conditions with their steps.**
+- **Clip copy brings the clip's program and bank.**
+- **Resetting a drum lane resets its effects**, and clearing a lane or clip clears its step
+  conditions.
+- **Reset gives the effects a new clip's values**, on the screen and in the saved clip alike.
+- **Leaving the Conductor role clears its shift** on every track.
+- **Undo leaves a playing clip's Iter count alone.**
+- **The drum DELAY knobs** Gate and Clock Feedback cover their full ranges.
+
+#### Saving and export
+- **Mute, solo, Stretch, a step tap, the LIVE ARP latch and the end of a recording** all mark the
+  project for saving.
+- **The LIVE ARP latch is saved.**
+- **Templates keep the groove**, per-track groove amounts and input quantize.
+- **Every step condition of a drum lane is saved**, past the lane's current length too.
+- **Export to Ableton writes the project's real key and scale.**
+
+#### Manual
+- Corrected where the manual and the Move disagreed: the LIVE ARP latch gesture, Live merge,
+  clip blink rates and the Shift+Back confirm.
+
 ## [2.0.1] — 2026-11-20
 2.0.0 was a test release; this section lists everything new since 1.1.3.
 
