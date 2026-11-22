@@ -425,6 +425,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     inst->follow_solo      = 0;   /* solo-clock fallback evaporates when the take stops */
     inst->solo_tick_accum  = 0;
     send_panic(inst);            /* ...which closes what POST modules have (post_release_all) */
+    looper_stop(inst);   /* B4: Stop ends the loop (ruled 2026-11-21; only panic did) */
     for (t = 0; t < NUM_TRACKS; t++) {
         /* Per-parameter automation goes back to rest on the transport-stop edge. A
          * chain parameter that automation was driving is otherwise abandoned

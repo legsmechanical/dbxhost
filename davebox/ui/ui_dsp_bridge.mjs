@@ -726,6 +726,16 @@ export function pollDSP() {
      * Delete+Play, an external clock, import's own stop) shows up here and only
      * here; a restart (Shift+Play, Loop+Play) never stops, so it keeps the pause. */
     if (_wasPlaying && !S.playing) S.followPaused = false;
+    /* Stop ends the looper (DSP ext_transport_stop → looper_stop, ruled
+     * 2026-11-21), so its pads must not stay lit over an idle loop: drop the
+     * loop lengths it was holding. The perf view, its mods and Latch mode stay
+     * as they are — only the running loop is gone. */
+    if (_wasPlaying && !S.playing && (S.perfStack.length > 0 || S.perfStickyLengths.size > 0)) {
+        S.perfStack         = [];
+        S.perfStickyLengths = new Set();   /* B4-ui: the stop ended the loop */
+        S.perfHoldPadHeld   = false;
+        invalidateLEDCache();
+    }
     for (let t = 0; t < NUM_TRACKS; t++) {
         const newStep = parseInt(v[1 + t], 10) | 0;
         S.trackCurrentStep[t] = newStep;
