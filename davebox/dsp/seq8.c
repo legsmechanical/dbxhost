@@ -5649,9 +5649,12 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
             uint32_t abs_tick = _is_preroll
                 ? (uint32_t)cl->loop_start * tps
                 : tr->current_clip_tick;
-            if (inst->inp_quant)
-                abs_tick = ((abs_tick + tps / 2) / tps) * tps;
-            else if (!_is_preroll)
+            /* The track's own InQ, as a pad note records (ruled 2026-11-21);
+             * the global inp_quant is kept for file compatibility only. */
+            if (tr->drum_inp_quant > 0) {   /* A6-inq */
+                uint32_t qt = (uint32_t)DRUM_INQ_TICKS[tr->drum_inp_quant];
+                abs_tick = ((abs_tick + qt / 2) / qt) * qt;
+            } else if (!_is_preroll)
                 abs_tick = groove_shift_clip_tick(cl, abs_tick,
                                groove_record_shift_late(inst, tr, groove_master_tick(inst)));
             uint16_t gticks = (uint16_t)(gate > 65535u ? 65535u : gate);
