@@ -105,6 +105,8 @@ step('⭐⭐ hold jog, tap MACROS, let go: Session on its MACROS bank, the globa
      * the MACROS bank (device, 2026-11-22) */
     info2 = null; S.screenDirty = true; tick();
     assert(info2 && info2.right === 'MACROS', 'overview label: ' + JSON.stringify(info2));
+    const hints = JSON.stringify(render.overviewHints());
+    assert(hints === JSON.stringify([['HLD', 'BANKS'], ['TCH', 'EDIT']]), 'overview hints: ' + hints);
 });
 
 step('⭐⭐ touch K1: the header reads K1 UNASSIGNED over GLOBAL MACROS; a turn writes nothing', () => {

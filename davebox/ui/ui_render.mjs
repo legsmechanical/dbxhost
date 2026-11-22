@@ -2146,7 +2146,9 @@ export function overviewHints() {
         return S.shiftHeld ? [autoShiftHint()] : heldStepHints();
     if (S.shiftHeld) return [['JOG', 'TRACK']];
     /* Josh, 2026-10-04: "session should get touch-mix no shift track hint". */
-    if (S.sessionView) return (S.perfViewLocked ? [] : [['HLD', 'BANKS']]).concat([['TCH', 'MIX']]);
+    /* On the MACROS bank a touch shows the global macros, as Track View's
+     * TCH EDIT does for its banks (device, 2026-11-22: it still said MIX). */
+    if (S.sessionView) return (S.perfViewLocked ? [] : [['HLD', 'BANKS']]).concat([['TCH', S.sessMacros ? 'EDIT' : 'MIX']]);
     return [['HLD', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
 }
 
