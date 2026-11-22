@@ -8902,6 +8902,24 @@ static void pa_emit_midi(seq8_track_t *tr, int cc, uint16_t v) {
     else if (cc <= 127)
         pfx_send(&tr->pfx, (uint8_t)(0xB0 | ch), (uint8_t)cc, v7);
 }
+/* Recorded pad-pressure aftertouch gives its pressure back: every lane of the
+ * clip it last played that left a non-zero value gets a 0, then the cache is
+ * cleared. On Stop and on a clip switch (ruled 2026-11-21: aftertouch returns
+ * to 0, as pitch bend recentres). */
+static void at_auto_release(seq8_track_t *tr) {
+    if (tr->at_last_clip < NUM_CLIPS) {
+        const at_auto_t *a = &tr->clip_at_auto[tr->at_last_clip];
+        uint8_t ch = tr->channel & 0x0F;
+        for (int l = 0; l < AT_MAX_LANES; l++) {
+            uint8_t k = a->pitch[l];
+            if (k == AT_LANE_FREE || tr->at_last_sent[l] == 0xFF || tr->at_last_sent[l] == 0) continue;
+            if (k == AT_LANE_CHAN) pfx_send(&tr->pfx, (uint8_t)(0xD0 | ch), 0, 0);   /* B5-padat */
+            else                   pfx_send(&tr->pfx, (uint8_t)(0xA0 | ch), k, 0);
+        }
+    }
+    memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
+}
+
 /* A clip's Program / Bank (per clip, 2026-09-03): sent when the clip launches
  * and when set. -1 = unset = nothing sent. Bank before program, MSB then LSB. */
 static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {

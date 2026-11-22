@@ -1292,8 +1292,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                 {
                     at_auto_t *_at = &tr->clip_at_auto[tr->active_clip];
                     if (tr->at_last_clip != tr->active_clip) {
+                        at_auto_release(tr);   /* the old clip's pressure back to 0 */
                         tr->at_last_clip = tr->active_clip;
-                        memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
                     }
                     uint8_t _ach = tr->channel & 0x0F;
                     int _al;

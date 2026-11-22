@@ -2867,7 +2867,29 @@ static int pa_rest_value(const seq8_instance_t *inst, const pa_entry_t *e, uint1
  * THREAD ONLY. ─────────────────────────────────────────────────────────────── */
 
 /* The OUTGOING half: give each of this clip's driven parameters back its rest. */
-static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
+/* A MIDI target's give-back (ruled 2026-11-21): pitch bend recentres (8192),
+ * channel aftertouch returns to 0, and a CC is given back its resting value
+ * like any other continuous parameter. `to` is the incoming clip on a switch
+ * (-1 on Stop / a lane release): when it drives the same MIDI target itself,
+ * nothing is sent — its own value follows on the same tick, and a centre-then-
+ * jump would be heard on the wire. */
+static int pa_midi_give_back(seq8_instance_t *inst, int track, const pa_entry_t *e, int to) {
+    int mcc;
+    uint16_t tgt = e->target;
+    if (tgt >= PA_MAX_TARGETS || !pa_target_is_midi(inst->pa_targets[tgt], &mcc)) return 0;
+    if (to >= 0) {
+        const pa_entry_t *in = pa_find(inst, track, to, tgt);
+        if (in && in->count && (in->flags & PA_FLAG_ACTIVE)) return 1;
+    }
+    uint16_t v;
+    if (mcc == PA_CC_PB)      v = 8192;
+    else if (mcc == PA_CC_AT) v = 0;
+    else if (!pa_rest_value(inst, e, &v)) return 1;
+    pa_emit_midi(&inst->tracks[track], mcc, v);   /* B5-rest */
+    return 1;
+}
+
+static void pa_release_scan(seq8_instance_t *inst, int track, int clip, int to) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip) continue;
@@ -2877,12 +2899,12 @@ static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
          * to give back — the value there is whatever the user set by hand, and
          * Stop must not undo that. */
         if (!(e->flags & PA_FLAG_ACTIVE)) continue;
+        if (pa_midi_give_back(inst, track, e, to)) continue;
         uint16_t back;
         if (!pa_rest_value(inst, e, &back)) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
-        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_emit_rest(inst, tgt, back, clip);
+        pa_emit_rest(inst, tgt, back, clip);
     }
 }
 
@@ -2930,7 +2952,8 @@ static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
         __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
         return;
     }
-    pa_release_scan(inst, track, clip);
+    pa_release_scan(inst, track, clip, -1);
+    at_auto_release(&inst->tracks[track]);   /* Stop: recorded pad pressure back to 0 */
 }
 
 /* ⭐⭐ A CLIP SWITCH IS **ONE** DECISION, NOT TWO. AUDIO THREAD ONLY.
@@ -2955,7 +2978,7 @@ static void pa_switch_track(seq8_instance_t *inst, int track, int from, int to) 
         __atomic_or_fetch(&inst->pa_switch_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
         return;
     }
-    pa_release_scan(inst, track, from);
+    pa_release_scan(inst, track, from, to);
     pa_assert_scan(inst, track, to);        /* second, so the incoming value wins the ring */
 }
 
@@ -2985,10 +3008,11 @@ static void pa_release_service(seq8_instance_t *inst) {
         __atomic_exchange_n(&e->release, 0, __ATOMIC_ACQ_REL);
         if (!e->used) continue;
         uint16_t tgt = e->target, back;
-        if (tgt >= PA_MAX_TARGETS || !pa_rest_value(inst, e, &back)) continue;
+        if (tgt >= PA_MAX_TARGETS) continue;
         e->last_sent_valid = 0;
-        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_emit_rest(inst, tgt, back, (int)e->clip);
+        if (pa_midi_give_back(inst, (int)e->track, e, -1)) continue;   /* a MIDI lane released */
+        if (!pa_rest_value(inst, e, &back)) continue;
+        pa_emit_rest(inst, tgt, back, (int)e->clip);
     }
     /* Release-only requests (a transport stop). */
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
@@ -3008,7 +3032,7 @@ static void pa_release_service(seq8_instance_t *inst) {
         uint8_t smask = __atomic_exchange_n(&inst->pa_switch_mask, 0, __ATOMIC_ACQ_REL);
         for (int t = 0; t < NUM_TRACKS; t++) {
             if (!(smask & (1u << t))) continue;
-            pa_release_scan(inst, t, (int)inst->pa_release_clip[t]);
+            pa_release_scan(inst, t, (int)inst->pa_release_clip[t], (int)inst->pa_assert_clip[t]);
             pa_assert_scan(inst, t, (int)inst->pa_assert_clip[t]);
         }
     }
