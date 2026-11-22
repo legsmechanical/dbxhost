@@ -39,8 +39,8 @@ static int sp_track_config(sp_ctx_t *cx) {
         /* "<oldK> <oldS> <newK> <newS> <flag>" — flag 1=commit, 0=cancel.
          * Self-contained (rebuilds the LUT from the descriptor) so a commit
          * can't ride a stale preview, and so notes + key/scale move atomically. */
-        int ok = 9, os = 1, nk = 9, ns = 1, flag = 0;
-        sscanf(val, "%d %d %d %d %d", &ok, &os, &nk, &ns, &flag);
+        int ok = 9, os = 1, nk = 9, ns = 1, flag = 0, remote = 0;
+        sscanf(val, "%d %d %d %d %d %d", &ok, &os, &nk, &ns, &flag, &remote);
         inst->xpose_preview_active = 0;
         if (flag) {
             ok = clamp_i(ok, 0, 11); os = clamp_i(os, 0, 13);
@@ -50,6 +50,12 @@ static int sp_track_config(sp_ctx_t *cx) {
             inst->pad_key     = (uint8_t)nk;
             inst->pad_scale   = (uint8_t)ns;
             inst->state_dirty = 1;
+            /* Optional 6th field, 1 = the commit came from the browser editor
+             * (its Transpose confirm). The device UI did not make this change,
+             * so tell it: a full re-sync re-reads key, scale and the clips. The
+             * device's own commit omits it — it has already applied the change
+             * and must not pay for a full re-sync. */
+            if (remote) rui_touch(inst);
         }
         return 1;
     }

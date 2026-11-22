@@ -286,7 +286,11 @@ int main(void) {
         hx_set_param(h, "bpm", "141");
         nn = hx_get_param(h, "state_full", b, (int)sizeof(b)); b[nn] = '\0';
         HX_ASSERT(strstr(b, ":55:111:"), "setup: t7 note :55:111: not serialized");
+        uint32_t xr0 = inst->rui_rev;
         hx_set_param(h, "t0_xpose_apply", "0 1 2 1 1");
+        /* the device's own commit: it already applied the change, so no
+         * device-facing re-sync is announced */
+        HX_ASSERT(inst->rui_rev == xr0, "device xpose_apply must not bump rui_rev");
         HX_ASSERT(inst->xpose_preview_active == 0, "xpose_apply flag=1 clears preview");
         HX_ASSERT(inst->pad_key == 2 && inst->pad_scale == 1,
                   "xpose_apply flag=1 commits pad_key=2/pad_scale=1");
@@ -295,6 +299,15 @@ int main(void) {
         HX_ASSERT(strstr(b, "\"key\":2,"),   "xpose_apply flag=1 key token");
         HX_ASSERT(strstr(b, "\"scale\":1,"), "xpose_apply flag=1 scale token");
         HX_ASSERT(strstr(b, ":57:111:"),     "xpose_apply flag=1 must transpose 55->57");
+        /* 6th field 1 = the browser editor's commit: the device is told
+         * (rui_rev), and the transpose itself is the same (57 -> 59). */
+        xr0 = inst->rui_rev;
+        hx_set_param(h, "t0_xpose_apply", "2 1 4 1 1 1");
+        HX_ASSERT(inst->rui_rev != xr0, "remote xpose_apply must bump rui_rev");
+        HX_ASSERT(inst->pad_key == 4 && inst->pad_scale == 1, "remote xpose_apply commits key 4");
+        hx_set_param(h, "bpm", "141");
+        nn = hx_get_param(h, "state_full", b, (int)sizeof(b)); b[nn] = '\0';
+        HX_ASSERT(strstr(b, ":59:111:"),     "remote xpose_apply must transpose 57->59");
     }
 
     /* launch_clip, stopped path: transport stopped + launch_quant=0 (Now) ->

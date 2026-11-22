@@ -347,6 +347,57 @@ const isAudio = ()=> M && M.tracks[M.sel.t] && (M.tracks[M.sel.t].pm===PM_AUDIO 
 const isAudioLoop = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===PM_AUDIO;
 const chopName = p=>"Chop "+(p+1);
 
+/* ---------- the device's rules, for writes made from this page ----------
+ * Every sequencer write here is a raw engine parameter, so a rule the device
+ * enforces in its own UI has to be enforced again here or the page walks
+ * around it. Two such rules:
+ *   - a Key/Scale change on a project with melodic content asks "Transpose
+ *     clips?" first, and commits through the transpose (ui/ui_xpose.mjs);
+ *   - a Move instrument has at most ONE owning track (ui/ui_constants.mjs
+ *     moveInstrOwner): a second track asking for it is refused, and the
+ *     owner keeps it. */
+/* Any non-drum track with a clip that has content — the device's
+ * anyMelodicClipHasContent, read from the snapshot's has-bits. */
+function anyMelodicContent(tracks){
+  return (tracks||[]).some(tr=>tr && tr.pm!==1 && tr.has && tr.has.some(Boolean));
+}
+/* The track that owns Move instrument `bus` (1..4), other than `self`; -1 =
+ * free. A Move-routed track's instrument is its channel, by the law the mixer
+ * addresses its bus with (moveBusForChannel). */
+function moveOwner(tracks, self, bus){
+  for(let i=0;i<(tracks||[]).length;i++){
+    const tr=tracks[i];
+    if(i===self || !tr) continue;
+    if(tr.route===1 && moveBusForChannel(tr.chan)===bus) return i;
+  }
+  return -1;
+}
+/* A small Yes/No card over the page — the device's confirm dialogs, here.
+ * Opens on Yes, as the device's do; Escape or a click outside is No. */
+let dlgEl=null;
+function closeDlg(){ if(dlgEl){ dlgEl.remove(); dlgEl=null; } }
+function showConfirm(title, lines, onYes, onNo){
+  closeDlg();
+  const el=document.createElement("div"); el.className="dlg";
+  el.innerHTML=`<h4>${escMix(title)}</h4>`+lines.map(l=>`<p>${escMix(l)}</p>`).join("")+
+    `<div class="dlgbtns"><button class="sm" data-a="yes">Yes</button><button class="sm" data-a="no">No</button></div>`;
+  const done=yes=>{ closeDlg(); document.removeEventListener("pointerdown",outside,true);
+    document.removeEventListener("keydown",esc,true); (yes?onYes:onNo)&&(yes?onYes:onNo)(); };
+  const outside=e=>{ if(dlgEl && !dlgEl.contains(e.target)) done(false); };
+  const esc=e=>{ if(e.key==="Escape"){ e.preventDefault(); done(false); } };
+  el.querySelector('[data-a="yes"]').onclick=()=>done(true);
+  el.querySelector('[data-a="no"]').onclick=()=>done(false);
+  document.body.appendChild(el); dlgEl=el;
+  el.querySelector('[data-a="yes"]').focus();
+  setTimeout(()=>{ document.addEventListener("pointerdown",outside,true); document.addEventListener("keydown",esc,true); },0);
+}
+/* A short message that goes away by itself — the device's action popup. */
+function showNotice(text){
+  const el=document.createElement("div"); el.className="dlg notice"; el.textContent=text;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2500);
+}
+
 /* Schedule a reconcile ~130ms after an edit. Do NOT zero the suppress window
  * here: a poll that was already in flight BEFORE the edit can land in the
  * 130..250ms gap, and if the window were torn down it would clobber the

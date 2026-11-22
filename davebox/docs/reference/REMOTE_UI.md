@@ -126,12 +126,19 @@ should pin (see §9).
 All writes are `R.setParam(P+key, value)` (P = `"overtake_dsp:"`), each followed by
 `afterEdit()` and usually `pullSoon()`. Full signatures in [`DAVEBOX_API.md`](DAVEBOX_API.md).
 
-- **Global:** `bpm`, `key`, `scale`, `swing_amt`/`swing_res` (the groove seen as a swing; the groove's own
+- **Global:** `bpm`, `swing_amt`/`swing_res` (the groove seen as a swing; the groove's own
   keys — `groove_kind`, `groove_amt`, … — are in `DAVEBOX_API.md`), `launch_quant`, `scale_aware`,
   `transport` (`play`/`stop`/`restart`/`play_focus:T:C`), `launch_scene`, `mute_all_clear`,
   `undo_restore`/`redo_restore`, `bake`, `clip_copy`/`drum_clip_copy`.
   > ⚠️ **New global keys are silently dropped by the host** (see repo CLAUDE.md). Only
   > grandfathered globals work; otherwise piggyback onto a `tN_*` push.
+- **Key/Scale** are never written raw: they go through the device's rule (`requestKeyScale`). With
+  melodic content the page asks *Transpose clips?* first (Yes/No, as the device); the commit is
+  `t0_xpose_apply "oldK oldS newK newS 1 1"` — the engine's transpose, the trailing `1` marking it
+  as the browser's so the engine bumps `rui_rev` and the device re-syncs. No writes nothing.
+- **Instrument / channel** (`requestTrackRoute`) obey the device's one-owner rule: a Move
+  instrument another track owns is refused with a notice and nothing is written; a Conductor,
+  Audio or Slicer track's destination is not written at all (the device converts the track).
 - **Per-track:** `tN_route` (`schwung`/`move`/`external`), `tN_channel` (1-based), `tN_mute`,
   `tN_solo`, `tN_convert_to_conduct`/`_melodic`/`_drum`, `tN_launch_clip`,
   `tN_all_lanes_*`; the active-clip transforms `tN_beat_stretch`, `tN_clock_shift`,

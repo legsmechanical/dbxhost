@@ -670,12 +670,52 @@ function renderGlobals(){
     `<div class="kv"><span>Swing res</span><span><select id="gSwR"><option value="0"${!g.swingRes?" selected":""}>1/16</option><option value="1"${g.swingRes?" selected":""}>1/8</option></select></span></div>`+
     `<div class="kv"><span>Launch quant</span><span><select id="gQ">${opt(QUANT,g.quant)}</select></span></div>`;
   const setG=(key,val)=>{ R.setParam(P+key,String(val)); afterEdit(); };
-  el.querySelector("#gKey").onchange=e=>{ g.key=+e.target.value; setG("key",e.target.value); pullSoon(); };
-  el.querySelector("#gScale").onchange=e=>{ g.scale=+e.target.value; setG("scale",e.target.value); pullSoon(); };
+  el.querySelector("#gKey").onchange=e=>requestKeyScale(+e.target.value, g.scale);
+  el.querySelector("#gScale").onchange=e=>requestKeyScale(g.key, +e.target.value);
   el.querySelector("#gSA").onclick=()=>{ g.scaleAware=!g.scaleAware; setG("scale_aware",g.scaleAware?1:0); renderGlobals(); layout(); draw(); };
   bindSlider(el,"gSw",0,100,v=>{ g.swing=v; setG("swing_amt",v); });
   el.querySelector("#gSwR").onchange=e=>setG("swing_res",e.target.value);
   el.querySelector("#gQ").onchange=e=>setG("launch_quant",e.target.value);
+}
+/* Key/Scale from this page, by the device's rule (ui_input_cc.mjs
+ * _finishKeyScaleEdit): with melodic content it asks "Transpose clips?" — Yes
+ * transposes every melodic clip into the new key and adopts it, No changes
+ * nothing; with none it adopts the key at once. Either way the commit is the
+ * engine's transpose (t0_xpose_apply), never a raw key/scale write. The sixth
+ * field says the write came from here, so the engine tells the device. */
+function requestKeyScale(k, s){
+  const g=M.glob;
+  if(k===g.key && s===g.scale) return;
+  const commit=()=>{
+    R.setParam(P+"t0_xpose_apply", g.key+" "+g.scale+" "+k+" "+s+" 1 1");
+    g.key=k; g.scale=s; afterEdit(); pullSoon(); renderGlobals(); layout(); draw(); };
+  if(!anyMelodicContent(M.tracks)){ commit(); return; }
+  showConfirm("Transpose clips?", ["To "+KEY_NAMES[k]+" "+SCALE_NAMES[s], "All melodic clips"],
+    commit, ()=>renderGlobals());
+}
+/* A track's instrument from this page, by the device's rules:
+ *   - a Move instrument has ONE owner (ui_constants.mjs moveInstrOwner): a
+ *     second track asking for it is refused and told who has it, and the
+ *     owner keeps it — nothing is written;
+ *   - a Conductor, Audio or Slicer track has no destination to set: on the
+ *     device, choosing one converts the track, which only the device can do.
+ * `route` is the wire value (schwung/move/external), `chan` 1..16. Returns
+ * whether anything was written. */
+function requestTrackRoute(t, route, chan){
+  const tr=M.tracks[t]; if(!tr) return false;
+  if(tr.pm===2||tr.pm===PM_AUDIO||tr.pm===PM_SLICER){
+    showNotice("Track "+(t+1)+" is "+trackInstName(tr,t)+" — change it on the Move");
+    return false;
+  }
+  if(route==="move"){
+    const bus=moveBusForChannel(chan), o=moveOwner(M.tracks, t, bus);
+    if(o>=0){ showNotice("Move "+bus+": Track "+(o+1)+" has it"); return false; }
+  }
+  const rv={schwung:0,move:1,external:2}[route];
+  if(chan!==tr.chan){ R.setParam(P+`t${t}_channel`, String(chan)); tr.chan=chan; }
+  if(rv!==tr.route){ R.setParam(P+`t${t}_route`, route); tr.route=rv; }
+  afterEdit(); renderSession(); pullSoon();
+  return true;
 }
 /* Session grid: tracks = columns, scenes = rows. Track headers + clips show the
  * device track colors. Click a clip = select it for editing; double-click =
@@ -874,8 +914,12 @@ function openTrackGear(t,anchor){
   document.body.appendChild(el);
   el.querySelector("#tgRoute").value=routeVal;
   el.querySelector("#tgChan").value=String(tr.chan||1);
-  el.querySelector("#tgRoute").onchange=e=>{ R.setParam(P+`t${t}_route`, e.target.value); afterEdit(); pullSoon(); };
-  el.querySelector("#tgChan").onchange=e=>{ R.setParam(P+`t${t}_channel`, String(e.target.value)); afterEdit(); pullSoon(); };
+  /* through the device's rules; a refused pick snaps the row back */
+  const wireRoute=x=>x.route===2?"external":x.route===0?"schwung":"move";
+  el.querySelector("#tgRoute").onchange=e=>{ const cur=M.tracks[t];
+    if(!requestTrackRoute(t, e.target.value, cur.chan||1)) e.target.value=wireRoute(cur); };
+  el.querySelector("#tgChan").onchange=e=>{ const cur=M.tracks[t];
+    if(!requestTrackRoute(t, wireRoute(cur), +e.target.value)) e.target.value=String(cur.chan||1); };
   /* sequencer mute/solo (stops NOTES — the ribbon's M/S silences AUDIO) */
   const tgMS=(btn,key)=>{ const b=el.querySelector(btn);
     const paint=()=>b.classList.toggle("on", !!M.tracks[t][key]);

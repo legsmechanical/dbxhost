@@ -3123,7 +3123,7 @@ The ribbon along the top links to the other pages of the [web manager](#303-dave
 - Config: dAVEBOx's own settings.
 - System: the version and system status.
 
-The header holds a BPM field, a settings pop-up (⚙) for tempo, key, scale, swing and launch quantize, and Undo and Redo (Cmd-Z and Cmd-Shift-Z).
+The header holds a BPM field, a settings pop-up (⚙) for tempo, key, scale, swing and launch quantize, and Undo and Redo (Cmd-Z and Cmd-Shift-Z). A key or scale change follows the same rule as on the Move: when a melodic clip holds notes, Transpose clips? asks first. Yes moves every melodic clip into the new key; No leaves the key as it was.
 
 ### 29.1.1 Switching Views
 
@@ -3135,7 +3135,7 @@ The header switches between the sequencer, Mixer, Sound and HUD. To edit a track
 
 Press a clip to launch it. To view a clip without launching it, Alt-click or Shift-click it. Drag a clip to move it, or Alt-drag to copy it. The cells at the left of each row (▶A and so on) launch scenes.
 
-A track header's menu (☰) sets the instrument (Schwung, Move or MIDI) and MIDI channel, and mutes or solos the track's sequence.
+A track header's menu (☰) sets the instrument (Schwung, Move or MIDI) and MIDI channel, and mutes or solos the track's sequence. As on the Move, each Move instrument belongs to one track: picking one another track already plays is refused, and a message says which track has it. A Conductor, Audio or Slicer track's instrument is changed on the Move.
 
 <img src="img/web-track-menu.png" alt="A track's ☰ menu">
 

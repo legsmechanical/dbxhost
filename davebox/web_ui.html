@@ -97,6 +97,14 @@
   .trkgear h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
   .trkgear .tgrow{margin:8px 0}
   .trkgear .tgrow span{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
+  /* the device's confirm dialogs and action popups, for writes made here */
+  .dlg{position:fixed;left:50%;top:30%;transform:translateX(-50%);min-width:220px;max-width:calc(100vw - 32px);
+    background:var(--panel2);border:1px solid var(--ctl-br);border-radius:var(--rad);
+    box-shadow:0 12px 32px rgba(0,0,0,.55);padding:12px 14px;z-index:60}
+  .dlg h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+  .dlg p{margin:4px 0;font-size:13px}
+  .dlg .dlgbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  .dlg.notice{top:auto;bottom:24px;font-size:13px}
   .scorner{font:10px ui-monospace,monospace;color:var(--faint);display:flex;align-items:center;justify-content:center}
   .slaunch{font:10px ui-monospace,monospace;color:var(--dim);background:#0b0d11;border:1px solid #262c36;
            border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;padding:2px}
