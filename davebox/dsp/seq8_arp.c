@@ -57,15 +57,32 @@ static void arp_remove_note(arp_engine_t *a, uint8_t pitch) {
 /* Drop all held notes, silence sounding, and reset cycle state.
  * Sounding silence is emitted raw (arp_emitting=1) so it bypasses the
  * arp gate in pfx_send. */
+/* End one SEQ ARP note now (raw emit: bypasses the pfx_send arp gate). */
+static void arp_note_end(seq8_track_t *tr, uint8_t pitch) {
+    play_fx_t *fx = &tr->pfx;
+    fx->arp_emitting = 1;
+    pfx_send(fx, (uint8_t)(0x80 | tr->channel), pitch, 0);
+    fx->arp_emitting = 0;
+}
+
+/* End every SEQ ARP note still sounding: the current one and, with gate above
+ * 100 %, the previous one's tail. */
+static void arp_end_all(seq8_track_t *tr) {
+    arp_engine_t *a = &tr->pfx.arp;
+    if (a->tail_active) {
+        arp_note_end(tr, a->tail_pitch);
+        a->tail_active = 0;
+    }
+    if (a->sounding_active) {
+        arp_note_end(tr, a->sounding_pitch);
+        a->sounding_active = 0;
+    }
+}
+
 static void arp_silence(seq8_instance_t *inst, seq8_track_t *tr) {
     (void)inst;
-    play_fx_t *fx = &tr->pfx;
-    arp_engine_t *a = &fx->arp;
-    if (a->sounding_active) {
-        fx->arp_emitting = 1;
-        pfx_send(fx, (uint8_t)(0x80 | tr->channel), a->sounding_pitch, 0);
-        fx->arp_emitting = 0;
-    }
+    arp_engine_t *a = &tr->pfx.arp;
+    arp_end_all(tr);
     arp_clear_runtime(a);
 }
 
@@ -264,10 +281,16 @@ static void arp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
 
     /* Silence prior sounding note before firing next (or before resting in Mute).
      * Raw emit (arp_emitting=1) so it bypasses the pfx_send arp gate. */
-    if (a->sounding_active) {
-        fx->arp_emitting = 1;
-        pfx_send(fx, (uint8_t)(0x80 | tr->channel), a->sounding_pitch, 0);
-        fx->arp_emitting = 0;
+    /* An earlier note's tail ends at a fire (it cannot outlast one). */
+    if (a->tail_active) {
+        arp_note_end(tr, a->tail_pitch);
+        a->tail_active = 0;
+    }
+    /* Gate up to 100 %: the note ends at the next fire, as ever. Above 100 %
+     * it rings on (ruled 2026-11-21): a rest leaves it, a new note hands over
+     * below. */
+    if (a->sounding_active && a->gate_pct <= 100) {   /* A2-scut */
+        arp_note_end(tr, a->sounding_pitch);
         a->sounding_active = 0;
     }
 
@@ -299,6 +322,20 @@ static void arp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     if (v < 1)   v = 1;
     if (v > 127) v = 127;
 
+    /* Gate above 100 %: the previous note is still sounding. The same pitch
+     * hands over legato (its off goes now, just before the new on); another
+     * pitch rings on as the tail for the rest of its gate. */
+    if (a->sounding_active) {
+        if (a->sounding_pitch == pitch || a->gate_remaining == 0) {   /* A2-slegato */
+            arp_note_end(tr, a->sounding_pitch);
+        } else {
+            a->tail_active    = 1;
+            a->tail_pitch     = a->sounding_pitch;
+            a->tail_remaining = a->gate_remaining;
+        }
+        a->sounding_active = 0;
+    }
+
     /* Emit raw — arp is the LAST chain stage. The pitch already came out of
      * NOTE FX → HARMZ → MIDI DLY upstream, so no further processing here.
      * arp_emitting=1 bypasses the pfx_send arp gate. */
@@ -321,7 +358,8 @@ static void arp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     a->ticks_until_next = (int32_t)rate;
     uint32_t gate = ((uint32_t)rate * (uint32_t)a->gate_pct) / 100U;
     if (gate < 1)        gate = 1;
-    if (gate >= rate)    gate = (uint32_t)rate - 1; /* note-off before next on */
+    if (a->gate_pct <= 100 && gate >= rate)    /* A2-scap: note-off before next on */
+        gate = (uint32_t)rate - 1;
     a->gate_remaining = gate;
 
     a->cycle_step_count++;
@@ -341,13 +379,19 @@ static void arp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         arp_retrigger(a, inst->arp_master_tick);
     }
 
-    /* Gate countdown for sounding note (raw emit, bypasses arp gate). */
+    /* Gate countdown for the tail and the sounding note (raw emit, bypasses
+     * the arp gate). */
+    if (a->tail_active && a->tail_remaining > 0) {
+        a->tail_remaining--;
+        if (a->tail_remaining == 0) {   /* A2-stail */
+            arp_note_end(tr, a->tail_pitch);
+            a->tail_active = 0;
+        }
+    }
     if (a->sounding_active && a->gate_remaining > 0) {
         a->gate_remaining--;
         if (a->gate_remaining == 0) {
-            fx->arp_emitting = 1;
-            pfx_send(fx, (uint8_t)(0x80 | tr->channel), a->sounding_pitch, 0);
-            fx->arp_emitting = 0;
+            arp_note_end(tr, a->sounding_pitch);
             a->sounding_active = 0;
         }
     }

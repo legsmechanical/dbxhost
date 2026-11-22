@@ -499,10 +499,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                      * were dropped too) (2026-10-04 review). Before the clock
                      * reset so any delay-echo offs it schedules are re-pegged
                      * with the rest of the queue just below. */
-                    if (_tr->tarp_on && _tr->tarp.sounding_active) {
-                        pfx_note_off_imm(inst, _tr, _tr->tarp.sounding_pitch);
-                        _tr->tarp.sounding_active = 0;
-                    }
+                    if (_tr->tarp_on)
+                        tarp_end_all(inst, _tr);   /* the current note and any tail */
                     post_raw_rebase(_tr, _tr->pfx.sample_counter);
                     _tr->pfx.sample_counter = 0;
                     /* Prime current_clip_tick to match the direction-aware
@@ -535,6 +533,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                         _a->sounding_active     = 0;
                         _a->sounding_pitch      = 0;
                         _a->gate_remaining      = 0;
+                        _a->tail_active         = 0;
+                        _a->tail_remaining      = 0;
                         _a->ticks_until_next    = 0;
                         _a->master_anchor       = 0;
                         _a->pending_first_note  = (_a->held_count > 0) ? 1 : 0;

@@ -662,6 +662,11 @@ typedef struct {
     uint8_t  sounding_active;
     uint8_t  sounding_pitch;     /* primary pitch sent into NOTE FX */
     uint32_t gate_remaining;     /* in master ticks */
+    /* Gate above 100 %: the previous note, still ringing after the next one
+     * started (gate <= 200 % = at most one overlap). */
+    uint8_t  tail_active;
+    uint8_t  tail_pitch;
+    uint32_t tail_remaining;     /* in master ticks */
 
     /* Monotonic counter of step-fire events. Incremented at the end of each
      * arp_fire_step / tarp_fire_step. JS polls per-track via tN_tarp_fc to
@@ -4254,6 +4259,9 @@ static void arp_clear_runtime(arp_engine_t *a) {
     a->sounding_active     = 0;
     a->sounding_pitch      = 0;
     a->gate_remaining      = 0;
+    a->tail_active         = 0;
+    a->tail_pitch          = 0;
+    a->tail_remaining      = 0;
     a->master_anchor       = 0;
 }
 
@@ -4730,17 +4738,33 @@ static void drum_repeat_init_defaults(seq8_track_t *tr) {
  * agree. With the arp on, the ring is fed from the arp's note-ons and the
  * moments its notes end (the four places that clear sounding_active), and
  * live_note_on/off stop feeding it the held pads. */
-static void tarp_capture_off(seq8_instance_t *inst, seq8_track_t *tr) {
-    capture_push(inst, tr, CAP_EV_NOTE_OFF, tr->tarp.sounding_pitch, 0);
+static void tarp_capture_off(seq8_instance_t *inst, seq8_track_t *tr, uint8_t pitch) {
+    capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
+}
+
+/* End a LIVE ARP note now: Capture's off, then the chain's. */
+static void tarp_note_end(seq8_instance_t *inst, seq8_track_t *tr, uint8_t pitch) {
+    tarp_capture_off(inst, tr, pitch);
+    pfx_note_off_imm(inst, tr, pitch);
+}
+
+/* End every LIVE ARP note still sounding: the current one and, with gate
+ * above 100 %, the previous one's tail. */
+static void tarp_end_all(seq8_instance_t *inst, seq8_track_t *tr) {
+    arp_engine_t *a = &tr->tarp;
+    if (a->tail_active) {
+        tarp_note_end(inst, tr, a->tail_pitch);
+        a->tail_active = 0;
+    }
+    if (a->sounding_active) {
+        tarp_note_end(inst, tr, a->sounding_pitch);
+        a->sounding_active = 0;
+    }
 }
 
 static void tarp_silence(seq8_instance_t *inst, seq8_track_t *tr) {
     arp_engine_t *a = &tr->tarp;
-    if (a->sounding_active) {
-        tarp_capture_off(inst, tr);
-        pfx_note_off_imm(inst, tr, a->sounding_pitch);
-        a->sounding_active = 0;
-    }
+    tarp_end_all(inst, tr);
     if (tr->tarp_latch) {
         /* Preserve held buffer so TARP resumes on next transport start */
         a->sounding_pitch     = 0;
@@ -4788,11 +4812,7 @@ static void tarp_drop_latched(seq8_instance_t *inst, seq8_track_t *tr) {
     } else {
         /* Physical pads remain → silence current sounding note;
          * tarp_tick re-fires from the compacted buffer next tick. */
-        if (a->sounding_active) {
-            tarp_capture_off(inst, tr);
-            pfx_note_off_imm(inst, tr, a->sounding_pitch);
-            a->sounding_active = 0;
-        }
+        tarp_end_all(inst, tr);
         a->sounding_pitch     = 0;
         a->gate_remaining     = 0;
         a->ticks_until_next   = 0;
@@ -5595,9 +5615,16 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
         return;
     }
 
-    if (a->sounding_active) {
-        tarp_capture_off(inst, tr);
-        pfx_note_off_imm(inst, tr, a->sounding_pitch);
+    /* An earlier note's tail ends at a fire (it cannot outlast one). */
+    if (a->tail_active) {
+        tarp_note_end(inst, tr, a->tail_pitch);
+        a->tail_active = 0;
+    }
+    /* Gate up to 100 %: the note ends at the next fire, as ever. Above 100 %
+     * it rings on (ruled 2026-11-21): a rest leaves it, a new note hands over
+     * below. */
+    if (a->sounding_active && a->gate_pct <= 100) {   /* A2-tcut */
+        tarp_note_end(inst, tr, a->sounding_pitch);
         a->sounding_active = 0;
     }
 
@@ -5626,6 +5653,20 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     if (v < 1)   v = 1;
     if (v > 127) v = 127;
 
+    /* Gate above 100 %: the previous note is still sounding. The same pitch
+     * hands over legato (its off goes now, just before the new on); another
+     * pitch rings on as the tail for the rest of its gate. */
+    if (a->sounding_active) {
+        if (a->sounding_pitch == pitch || a->gate_remaining == 0) {   /* A2-tlegato */
+            tarp_note_end(inst, tr, a->sounding_pitch);
+        } else {
+            a->tail_active    = 1;
+            a->tail_pitch     = a->sounding_pitch;
+            a->tail_remaining = a->gate_remaining;
+        }
+        a->sounding_active = 0;
+    }
+
     /* Capture takes this note, as Record does below (see tarp_capture_off). */
     capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, (uint8_t)v);
     /* Emit through pfx chain (NOTE FX → HARMZ → MIDI DLY → SEQ ARP). */
@@ -5646,7 +5687,7 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     a->ticks_until_next = (int32_t)rate;
     uint32_t gate = ((uint32_t)rate * (uint32_t)a->gate_pct) / 100U;
     if (gate < 1)     gate = 1;
-    if (gate >= rate) gate = (uint32_t)rate - 1;
+    if (a->gate_pct <= 100 && gate >= rate) gate = (uint32_t)rate - 1;   /* A2-tcap */
     a->gate_remaining = gate;
 
     /* Record arp output into clip when recording. Also capture during the
@@ -5735,11 +5776,17 @@ static void tarp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         arp_retrigger(a, inst->arp_master_tick);
     }
 
+    if (a->tail_active && a->tail_remaining > 0) {
+        a->tail_remaining--;
+        if (a->tail_remaining == 0) {   /* A2-ttail */
+            tarp_note_end(inst, tr, a->tail_pitch);
+            a->tail_active = 0;
+        }
+    }
     if (a->sounding_active && a->gate_remaining > 0) {
         a->gate_remaining--;
         if (a->gate_remaining == 0) {
-            tarp_capture_off(inst, tr);
-            pfx_note_off_imm(inst, tr, a->sounding_pitch);
+            tarp_note_end(inst, tr, a->sounding_pitch);
             a->sounding_active = 0;
         }
     }

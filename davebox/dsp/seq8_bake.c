@@ -204,7 +204,16 @@ static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t cli
                 pitch = (uint8_t)scale_transpose(inst, (int)pitch, (int)a.step_int[a.step_pos]);
             uint32_t gate = ((uint32_t)rate * a.gate_pct) / 100u;
             if (gate < 1) gate = 1;
-            if (gate >= rate) gate = rate - 1;
+            if (a.gate_pct <= 100 && gate >= rate) gate = rate - 1;   /* as arp_fire_step */
+            /* Above 100 %: a same-pitch note still ringing ends at this one
+             * (the legato hand-over arp_fire_step makes). */
+            {
+                int pi;
+                for (pi = oc - 1; pi >= 0 && pi >= oc - 2; pi--) {
+                    if (out[pi].pitch == pitch && out[pi].tick + out[pi].gate > tick)
+                        out[pi].gate = (uint16_t)(tick - out[pi].tick);
+                }
+            }
             if (oc < out_max)
                 out[oc++] = (bake_note_t){ tick, (uint16_t)gate, pitch, (uint8_t)v, pitch };
         } else if (step_off) {
