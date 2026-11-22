@@ -523,6 +523,12 @@ typedef struct {
     uint8_t  orig_velocity;
     uint8_t  gen_notes[MAX_GEN_NOTES];
     int      gen_count;
+    /* The Conductor shift this note was pitched with (sounding flag + both
+     * offsets), so a "Now" retrigger leaves alone a note already at the
+     * current shift — one born this tick (see conductor_apply_now_retrigger). */
+    int16_t  cond_deg;
+    int16_t  cond_semi;
+    uint8_t  cond_snd;
     double   spc;
     int      stored_repeat_count;
     struct {
@@ -4007,6 +4013,13 @@ static void pfx_q_drop_keep_offs(play_fx_t *fx) {
 
 #include "seq8_tonality.c"
 
+/* Record on an active note the Conductor shift it is pitched with. */
+static inline void pfx_cond_stamp(const seq8_instance_t *inst, pfx_active_t *an) {
+    an->cond_deg  = inst->conductor_off_deg;
+    an->cond_semi = inst->conductor_off_semi;
+    an->cond_snd  = inst->conductor_sounding;
+}
+
 /* Reference R = root pitch-class at MIDI octave 4 (eff key + 60). Set the live
  * conductor transposition offset from the Conductor's currently-played note. */
 static void conductor_set_offset_from_note(seq8_instance_t *inst, int played) {
@@ -4456,6 +4469,7 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     an->orig_velocity = (uint8_t)v;
     an->gen_count     = gc;
     memcpy(an->gen_notes, gen, (size_t)gc);
+    pfx_cond_stamp(inst, an);   /* A1-stamp */
 
     double sp    = pfx_spc(inst, tr);
     uint8_t on_s = (uint8_t)(0x90 | ch);
@@ -4507,6 +4521,11 @@ static void conductor_apply_now_retrigger(seq8_instance_t *inst) {
         for (p = 0; p < 128; p++) {
             pfx_active_t *an = &fx->active_notes[p];
             if (!an->active) continue;
+            /* Already at this shift (born this tick, after the Conductor
+             * played it): one note-on per tick, never a second. */
+            if (an->cond_snd == inst->conductor_sounding &&
+                an->cond_deg == inst->conductor_off_deg &&
+                an->cond_semi == inst->conductor_off_semi) continue;   /* A1-now-once */
             uint8_t off_s = (uint8_t)(0x80 | an->channel);
             uint8_t on_s  = (uint8_t)(0x90 | an->channel);
             int i;
@@ -4526,6 +4545,7 @@ static void conductor_apply_now_retrigger(seq8_instance_t *inst) {
             /* update the record so the eventual gate-off matches the new pitch */
             an->gen_count = gc;
             memcpy(an->gen_notes, gen, (size_t)gc);
+            pfx_cond_stamp(inst, an);   /* A1-restamp */
         }
     }
 }

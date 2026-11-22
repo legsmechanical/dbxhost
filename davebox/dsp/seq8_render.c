@@ -339,6 +339,18 @@ static void rui_live_check(seq8_instance_t *inst) {
     }
 }
 
+/* The order tracks play a tick in: the Conductor first, then the others in
+ * index order (ruled 2026-11-21). Its note-on / note-off / mute-clear set the
+ * shift for the tick, so every responder hears the same shift whatever its
+ * track number. The Conductor emits no MIDI, so moving it first reorders
+ * nothing on the wire. */
+static inline int track_play_order(const seq8_instance_t *inst, int i) {
+    int c = (int)inst->conductor_track;
+    if (c < 0 || c >= NUM_TRACKS) return i;
+    if (i == 0) return c;                /* A1-first */
+    return (i <= c) ? i - 1 : i;
+}
+
 static void render_block_body(void *instance, int16_t *out_lr, int frames) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst) return;
@@ -439,8 +451,9 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                  * so live presses are audible through the click. Looper and
                  * SEQ ARP stay dormant (playback-side; no clip playback during
                  * count-in). */
-                { int _tt;
-                  for (_tt = 0; _tt < NUM_TRACKS; _tt++) {
+                { int _tt, _oi;
+                  for (_oi = 0; _oi < NUM_TRACKS; _oi++) {   /* A1-order-countin */
+                      _tt = track_play_order(inst, _oi);
                       tarp_tick(inst, &inst->tracks[_tt]);
                       drum_repeat_tick(inst, &inst->tracks[_tt]);
                       drum_repeat2_tick(inst, &inst->tracks[_tt]);
@@ -622,7 +635,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
             if ((inst->arp_master_tick % groove_slot_ticks(&inst->groove)) == 0)
                 groove_recompute_step_delay(inst, (uint64_t)inst->arp_master_tick);
             looper_tick(inst);
-            for (t = 0; t < NUM_TRACKS; t++) {
+            for (int _oi = 0; _oi < NUM_TRACKS; _oi++) {   /* A1-order-stopped */
+                t = track_play_order(inst, _oi);
                 seq8_track_t *tr_s = &inst->tracks[t];
                 /* Gate countdown: needed for repeat note-offs while stopped */
                 { int pp;
@@ -713,7 +727,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
             }
         }
 
-        for (t = 0; t < NUM_TRACKS; t++) {
+        for (int _oi = 0; _oi < NUM_TRACKS; _oi++) {   /* A1-order */
+            t = track_play_order(inst, _oi);
             seq8_track_t *tr = &inst->tracks[t];
             clip_t *cl = &tr->clips[tr->active_clip];
 
