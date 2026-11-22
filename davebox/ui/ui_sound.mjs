@@ -1176,6 +1176,9 @@ export function soundBusLevelDirtyForTest(v) {
 const BUS_CRUMB = { master: 'Master', sendA: 'Send A', sendB: 'Send B' };
 export function soundCrumbHead() {
     if (S.bus && S.bus.kind === 'global') return BUS_CRUMB[S.bus.id] || S.bus.title;
+    /* the global macro page has no track either (device, 2026-11-22: its
+     * picker read "T0 > MACROS > K1") */
+    if (S.gmac) return 'Global';
     return 'T' + (S.track + 1);
 }
 export function soundBusForTest() {

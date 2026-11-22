@@ -68,7 +68,11 @@ const tick = (n) => { for (let i = 0; i < (n || 1); i++) globalThis.tick(); };
 /* What the OLED was asked to draw this frame: the touched header's name, the
  * resting header's text. */
 let hdr = [];
-kit.setKitHudSink((fam, d) => { if (fam === 'KitTouchedHeader' || fam === 'KitBankHeader') hdr.push({ fam, d }); });
+let info2 = null;
+kit.setKitHudSink((fam, d) => {
+    if (fam === 'KitTouchedHeader' || fam === 'KitBankHeader') hdr.push({ fam, d });
+    if (fam === 'Info2') info2 = d;
+});
 const frame = () => { hdr = []; S.screenDirty = true; tick(); return hdr; };
 const touchedName = () => { const h = frame().filter((x) => x.fam === 'KitTouchedHeader'); return h.length ? String(h[h.length - 1].d.name) : null; };
 const MACROS_PAD = P.bankMapPadForCell(P.SESS_PAD_MAP.ctrl.col, 0);
@@ -97,6 +101,10 @@ step('⭐⭐ hold jog, tap MACROS, let go: Session on its MACROS bank, the globa
     assert(it.cur && it.cur.c === 2 && it.cur.r === 0, 'the map does not mark MACROS as where you are: ' + JSON.stringify(it.cur));
     cc(3, 0); tick();
     assert(snd.soundGlobalMacros(), 'the release closed the page');
+    /* the overview names the bank the knobs are on: it read "< VOLUME >" over
+     * the MACROS bank (device, 2026-11-22) */
+    info2 = null; S.screenDirty = true; tick();
+    assert(info2 && info2.right === 'MACROS', 'overview label: ' + JSON.stringify(info2));
 });
 
 step('⭐⭐ touch K1: the header reads K1 UNASSIGNED over GLOBAL MACROS; a turn writes nothing', () => {

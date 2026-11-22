@@ -1657,7 +1657,9 @@ function drawRow2Labels() {
          * incomplete session view... only the count-in indicator'). Read the
          * mode table itself, the one owner; the gateway carries 'FX'. */
         const _sm = SESS_KNOB_MODES[S.sessKnobMode];
-        const ml = (_sm && _sm.label) || 'VOLUME';
+        /* On the MACROS bank the knobs are the global macros, not this mode
+         * (device, 2026-11-22: the overview still said VOLUME there). */
+        const ml = S.sessMacros ? 'MACROS' : ((_sm && _sm.label) || 'VOLUME');
         /* "< SEND A >", underlined (Josh, 2026-09-05): the arrows say this is what
          * the jog scrolls, the rule matches the key/scale rule in track view.
          * The full label, not the short one — there is room beside the metro. */

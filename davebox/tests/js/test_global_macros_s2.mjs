@@ -84,7 +84,11 @@ const tick = (n) => { for (let i = 0; i < (n || 1); i++) globalThis.tick(); };
 const click = () => { cc(3, 127); cc(3, 0); };
 const jog = (n) => { for (let i = 0; i < Math.abs(n); i++) cc(14, n > 0 ? 1 : 127); };
 let hdr = [];
-kit.setKitHudSink((fam, d) => { if (fam === 'KitTouchedHeader') hdr.push(String(d.name)); });
+let crumbs = null;
+kit.setKitHudSink((fam, d) => {
+    if (fam === 'KitTouchedHeader') hdr.push(String(d.name));
+    if (fam === 'KitCrumbs') crumbs = d.parts.slice();
+});
 const touchedName = () => { hdr = []; S.screenDirty = true; tick(); return hdr.length ? hdr[hdr.length - 1] : null; };
 const release = (k) => { note(k, 0); tick(40); S.cardHoldUntil = -1; };
 const MACROS_PAD = Pm.bankMapPadForCell(Pm.SESS_PAD_MAP.ctrl.col, 0);
@@ -134,6 +138,10 @@ step('⭐⭐ touch K1 + click: the SCOPE list names T1..T8 by instrument; T3 > S
     const sc = snd.soundGmacScopeForTest();
     assert(sc.view && sc.rows.length >= 8, 'no scope list: ' + JSON.stringify(sc));
     assert(/^T3 /.test(sc.rows[2]) && /^T8/.test(sc.rows[7]), 'rows: ' + sc.rows);
+    /* the crumb trail's head: there is no track here (S.track is -1), so it
+     * must not read "T0" (device, 2026-11-22) */
+    crumbs = null; S.screenDirty = true; tick();
+    assert(crumbs && crumbs[0] === 'Global', 'crumb head: ' + JSON.stringify(crumbs));
     cc(51, 127); cc(51, 0); tick();               /* Back: out to the page, nothing assigned */
     note(0, 0); tick(40);
     assert(!S.globalMacros[0], 'Back assigned something');
