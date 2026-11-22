@@ -88,8 +88,10 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         if (g_inst->looper_state == LOOPER_STATE_CAPTURING &&
                 (st == 0x90 || st == 0x80) &&
                 g_inst->looper_event_count < LOOPER_MAX_EVENTS) {
-            /* Sorted in (looper_capture_store). */
-            int ei = looper_capture_store(g_inst, g_inst->looper_pos, px->track_idx, status, d1, d2);
+            /* Sorted in, at the tick it was HEARD: a live pad hit steps back by
+             * the output lead, as a melodic note does (it kept the raw
+             * position, so a looped drum pad replayed ~3 blocks late). */
+            int ei = looper_capture_store(g_inst, looper_heard_pos(g_inst), px->track_idx, status, d1, d2);   /* B7 */
             /* Apply perf mods to live emit so mods kick in immediately during
              * the first capture cycle. perf_apply skips pitch transforms for
              * drum tracks (gated on tr_idx pad_mode==DRUM); vel/gate/cycle
