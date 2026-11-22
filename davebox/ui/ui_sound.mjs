@@ -4906,13 +4906,29 @@ function knobParamList(target) {
             if (h && h.levels) {
                 for (const ln in h.levels) {
                     const level = h.levels[ln];
+                    /* A REPEATED element (`child_prefix`, e.g. a drum rack's
+                     * pads): its params only exist per element — the module
+                     * answers `pad5_cutoff`, never a bare `cutoff`. A macro
+                     * drives the element FOCUSED when it is assigned, fixed
+                     * from then on (2026-11-22): the key carries its index. */
+                    const cpfx = (typeof level.child_prefix === 'string' && level.child_prefix) ? level.child_prefix : '';
+                    let cn = '';
+                    if (cpfx) {
+                        const base = Number.isFinite(level.child_index_base) ? level.child_index_base : 0;
+                        const raw = level.child_index_param ? parseInt(engineGet(S.slot, target, level.child_index_param), 10) : NaN;
+                        cn = String(Number.isFinite(raw) ? raw : base);
+                    }
+                    const keyOf = (k) => cpfx ? cpfx + cn + '_' + k : k;
+                    const labelOf = (k, l) => cpfx ? childTag(cpfx, cn) + ' ' + (l || k) : (l || k);
                     for (const k of (Array.isArray(level.knobs) ? level.knobs : [])) {
-                        if (typeof k === 'string') push(k, k);
-                        else if (k && k.key) push(k.key, k.label);
+                        if (typeof k === 'string') push(keyOf(k), labelOf(k, k));
+                        else if (k && k.key) push(keyOf(k.key), labelOf(k.key, k.label || k.name));
                     }
                     for (const p of (Array.isArray(level.params) ? level.params : [])) {
-                        if (typeof p === 'string') push(p, p);
-                        else if (p && p.key) push(p.key, p.label);
+                        if (typeof p === 'string') { push(keyOf(p), labelOf(p, p)); continue; }
+                        if (!p || !p.key) continue;
+                        if (cpfx && p.key === level.child_index_param) continue;   /* the selector itself */
+                        push(keyOf(p.key), labelOf(p.key, p.label || p.name));
                     }
                 }
             }
@@ -6748,7 +6764,7 @@ function legShortName(leg) {
     if (leg.kind === AU_KIND) { const st = SEQ_AUTO_TARGETS[leg.key]; return st ? st.label : 'Smp'; }
     if (leg.kind === 'midi') return midiTargetName(leg.target).split(' ')[0];
     const km = S.knobMeta[kmKey(leg)];
-    const c = km && km.find(q => q && q.key === leg.key);
+    const c = metaParamFor(km, leg.key);
     return c ? shortLabel(String(c.name || c.label || leg.key)) : leg.key;
 }
 function macroLevelIdx(m) { return LEVEL_KNOB_SPECS.findIndex(x => x.key === m.key); }
@@ -7200,10 +7216,27 @@ function fineStepFor(cell) {
  * mixer. `null` while the component's metadata has not been read;
  * `{ vanished: true }` when the target is not among the params the component
  * now exposes (module swapped) — drawn UNASSIGNED, never as a blank knob. */
+/* `P5` for element 5 of a `pad` child level: the repeated element's tag in a
+ * list row and a header. */
+function childTag(prefix, n) { return String(prefix).charAt(0).toUpperCase() + n; }
+/* The metadata row for a leg's key. A per-element key (`pad5_cutoff`, see
+ * knobParamList) has no row of its own — chain_params describes the bare
+ * `cutoff` — so it borrows that row, named with the element (`P5 Filter
+ * Freq`). */
+function metaParamFor(meta, key) {
+    if (!meta) return null;
+    const exact = meta.find(q => q && q.key === key);
+    if (exact) return exact;
+    const mm = /^([a-z]+)(\d+)_(.+)$/.exec(String(key));
+    if (!mm) return null;
+    const base = meta.find(q => q && q.key === mm[3]);
+    if (!base) return null;
+    return Object.assign({}, base, { key, name: childTag(mm[1], mm[2]) + ' ' + (base.name || base.label || mm[3]) });
+}
 function macroCellFor(m) {
     const meta = S.knobMeta[kmKey(m)];
     if (!meta) return null;
-    const p = meta.find(q => q && q.key === m.key);
+    const p = metaParamFor(meta, m.key);
     if (!p) return { vanished: true };
     const cell = makeCell(m.key, p);
     if (MACRO_UNTURNABLE[cell.kind]) return cell;      /* shown, never turned */

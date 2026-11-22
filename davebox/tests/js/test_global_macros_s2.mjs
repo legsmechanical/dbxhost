@@ -33,6 +33,24 @@ for (const sl of [2, 4]) {
     P[sl + '|synth:cutoff'] = '0.5';
     P[sl + '|synth:reso'] = '0.2';
 }
+/* Slot 6 (T7): a drum rack whose pad params live under a `child_prefix`
+ * level, as DR32's do — the module answers `pad5_cutoff`, never `cutoff`. */
+P['6|synth:module'] = 'dr32';
+P['6|synth:name'] = 'DrumRack32';
+P['6|synth:chain_params'] = JSON.stringify([
+    { key: 'ui_current_pad', name: 'Pad', type: 'int', min: 1, max: 32 },
+    { key: 'cutoff', name: 'Filter Freq', type: 'float', min: 0, max: 1, step: 0.01 },
+]);
+P['6|synth:ui_hierarchy'] = JSON.stringify({ levels: {
+    root: { name: 'DrumRack32', params: [{ level: 'pad_shape', label: 'Shape' }], knobs: [] },
+    pad_shape: { name: 'Shape', child_prefix: 'pad', child_count: 32, child_index_base: 1,
+                 child_index_param: 'ui_current_pad',
+                 params: [{ key: 'ui_current_pad', name: 'Pad', type: 'int', min: 1, max: 32 },
+                          { key: 'cutoff', name: 'Filter Freq', type: 'float', min: 0, max: 1 }] },
+} });
+P['6|synth:ui_current_pad'] = '5';
+P['6|synth:pad5_cutoff'] = '0.4';
+P['6|synth:pad9_cutoff'] = '0.7';
 let writes = [];          /* shadow_set_param(slot, key, val) */
 let hostSets = [];        /* every key davebox sends its own DSP */
 let jsErr = '';
@@ -222,6 +240,27 @@ step('⭐ a second leg on T5: MAC1 and a %, the header keeps T3, one turn writes
     const sl = new Set(writes.filter((x) => x.key === 'synth:cutoff').map((x) => x.slot));
     assert(sl.has(2) && sl.has(4) && sl.size === 2, 'slots written: ' + JSON.stringify(writes));
     release(0);
+});
+
+step('⭐⭐ a PER-PAD param (a child_prefix level, e.g. DR32): the leg is fixed to the pad focused at assignment — pad5_cutoff, header T7 P5 FILTER FREQ', () => {
+    /* the bare key is what the module never answers (device, 2026-11-22: the
+     * knob read "--" and a turn did nothing) */
+    assignVia(2, 6, 'pad5_cutoff');
+    const g = S.globalMacros[2];
+    assert(g && g.legs.length === 1 && g.legs[0].key === 'pad5_cutoff' && g.legs[0].track === 6, 'store: ' + JSON.stringify(g));
+    if (snd.soundViewForTest() !== 19) { cc(51, 127); cc(51, 0); tick(2); }
+    tick(12);
+    note(2, 127);
+    assert(touchedName() === 'T7 P5 FILTER FREQ', 'header: ' + touchedName());
+    writes = [];
+    cc(73, 4); tick(6);
+    assert(writes.length >= 1 && writes.every((x) => x.slot === 6 && x.key === 'synth:pad5_cutoff'), 'writes: ' + JSON.stringify(writes));
+    /* focus moves to pad 9: the macro still drives pad 5 */
+    P['6|synth:ui_current_pad'] = '9';
+    writes = [];
+    cc(73, 4); tick(6);
+    assert(writes.length >= 1 && writes.every((x) => x.key === 'synth:pad5_cutoff'), 'after a focus change: ' + JSON.stringify(writes));
+    release(2);
 });
 
 step('no tick threw', () => { assert(!jsErr, jsErr); });
