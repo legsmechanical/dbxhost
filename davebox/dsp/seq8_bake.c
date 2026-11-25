@@ -131,38 +131,45 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
                 : note_gate ? (uint32_t)in[ni].gate
                 : fx->gate_time > 0 ? (uint32_t)((GATE_TICKS * fx->gate_time) / 100)
                 : 1;
-            /* Retrig also CUTS an echo already sounding: playback queues an
-             * echo's note-off when the note it echoes ends, and the next note
-             * after that drains the queue — sending those offs at once. So the
-             * echo ends at the first onset that is past both its start and its
-             * note's end (wrapping to the next pass, as the loop plays).
-             * Melodic only, like the chord rule above: a drum lane's echoes
-             * repeat its hit's own pitch and are an open question of their
-             * own (checked against playback: tests/test_bake_echo_live.c). */
-            if (note_gate && fx->delay_retrig) {
-                /* the note ends at its gate, or sooner where it strikes again
-                 * (playback ends it there: its next pass, or the same key) */
-                uint32_t src_end = in[ni].tick + in[ni].gate;
-                /* a fixed Gate's off is queued with its on — unless the echo
-                 * is on a pitch its note sounds: that one waits for the note's
-                 * end, as every echo did (pfx_echo_waits); how long it rings on
-                 * a pitch its note holds is the open same-pitch question */
-                int waits = 0;
+            /* The note ends at its gate, or sooner where it strikes again
+             * (playback ends it there: its next pass, or the same key). A
+             * fixed-Gate echo's off is queued with its on — unless it waits
+             * for that end, as every echo did (pfx_echo_waits): on a pitch
+             * its note sounds, or under SEQ ARP. Under SEQ ARP a waiting echo
+             * also rings on to that end (the arp holds it till then); on its
+             * note's own pitch how long it rings is the open same-pitch
+             * question. Melodic, as the cut below. */
+            uint32_t src_end = in[ni].tick + in[ni].gate;
+            int waits = 1;
+            if (note_gate) {
+                int j;
+                for (j = 0; j < in_count; j++) {
+                    if (in[j].prim != in[ni].prim) continue;
+                    uint32_t tj = in[j].tick;
+                    while (tj <= in[ni].tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
+                    if (tj < src_end) src_end = tj;
+                }
                 if (fx->fb_gate_time > 0) {
+                    const int arp = fx->arp.style != 0 && !(fx->track_idx < NUM_TRACKS &&
+                                        pad_mode_sampled(inst->tracks[fx->track_idx].pad_mode));
                     int k;
+                    waits = arp;
                     for (k = 0; k < in_count && !waits; k++)
                         waits = in[k].tick == in[ni].tick && in[k].prim == in[ni].prim && in[k].pitch == echo_pitch;
+                    if (arp && src_end > echo_tick && src_end - echo_tick > eg) eg = src_end - echo_tick;
                 }
-                if (fx->fb_gate_time > 0 && !waits) src_end = 0;
-                else {
-                    int j;
-                    for (j = 0; j < in_count; j++) {
-                        if (in[j].prim != in[ni].prim) continue;
-                        uint32_t tj = in[j].tick;
-                        while (tj <= in[ni].tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
-                        if (tj < src_end) src_end = tj;
-                    }
-                }
+            }
+            /* Retrig also CUTS an echo already sounding: playback queues an
+             * echo's note-off when the note it echoes ends (or with its on),
+             * and the next note after that drains the queue — sending those
+             * offs at once. So the echo ends at the first onset that is past
+             * both its start and (if it waits) its note's end, wrapping to
+             * the next pass, as the loop plays. Melodic only, like the chord
+             * rule above: a drum lane's echoes repeat its hit's own pitch and
+             * are an open question of their own (checked against playback:
+             * tests/test_bake_echo_live.c). */
+            if (note_gate && fx->delay_retrig) {
+                if (!waits) src_end = 0;
                 uint32_t cut = UINT32_MAX;
                 int j;
                 for (j = 0; j < in_count; j++) {

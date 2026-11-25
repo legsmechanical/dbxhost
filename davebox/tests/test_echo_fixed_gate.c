@@ -81,15 +81,17 @@ static hx_t *one(uint32_t at, uint16_t gate, const char *const *set) {
     return h;
 }
 /* no pitch left sounding, no off before its on */
-static int stuck(void) {
+static int stuck_but(int skip) {
     int cnt[128] = { 0 }, bad = 0;
     for (int i = 0; i < g_an; i++) {
+        if (g_a[i].a == skip) continue;
         if (g_a[i].kind == 0) cnt[g_a[i].a]++;
         else if (g_a[i].kind == 3 && cnt[g_a[i].a] > 0) cnt[g_a[i].a]--;
     }
     for (int p = 0; p < 128; p++) bad += cnt[p] != 0;
     return bad;
 }
+static int stuck(void) { return stuck_but(-1); }
 
 int main(void) {
     /* melodic: echoes at 24 (45) and 48 (50), the note held to 96 */
@@ -176,6 +178,85 @@ int main(void) {
         char m[112]; snprintf(m, sizeof m, "drum, swing, Gate %s: %d of %d hits and echoes never ended on their own", fixed ? "1/64" : "--", bad, ons);
         printf("  %s\n", m);
         HX_ASSERT(ons >= 3 && bad == 0, m);
+        hx_destroy(h);
+    }
+    /* swing at odd tempos: an echo's off at its note's end is clamped to
+     * after the on AS IT WAS QUEUED (re-estimating that swing at the note's
+     * end could disagree by a step and send the off first) — the default
+     * Gate, and a waiting fixed one (pitch feedback 0) */
+    {
+        static const char *const bpms[] = { "174", "133", "77" };
+        for (int b = 0; b < 3; b++) for (int fx = 0; fx <= 1; fx++) {
+            const char *set[] = { fx ? "delay_pitch_fb 0" : "delay_pitch_fb 5", "delay_repeats 3", "delay_time 8",
+                                  fx ? "delay_gate_fb 1" : "delay_gate_fb 0",
+                                  "!groove_kind", "1", "!groove_amt", "80", "!bpm", bpms[b], NULL };
+            int bad = 0;
+            for (uint32_t at = 0; at < 96; at += 3) {
+                hx_t *h = one(at, fx ? 96 : 6, set);
+                play(h, 16, g_a, &g_an);
+                /* echoes only: a 6-tick note swung across into an unswung
+                 * step can end before it starts — the sequencer's own swing,
+                 * not the delay's (a matter of its own) */
+                if (stuck_but(fx ? -1 : 40)) { bad++; if (getenv("EFG_DUMP")) { printf("    at %u:", at); for (int i = 0; i < g_an; i++) if (g_a[i].kind == 0 || g_a[i].kind == 3) printf(" %s%u@%u", g_a[i].kind ? "off" : "ON", g_a[i].a, g_a[i].tick); printf("\n"); } }
+                hx_destroy(h);
+            }
+            char m[112]; snprintf(m, sizeof m, "swing 80%% at %s bpm, Gate %s: %d of 32 placements left a note sounding", bpms[b], fx ? "1/64" : "--", bad);
+            printf("  %s\n", m);
+            HX_ASSERT(bad == 0, m);
+        }
+    }
+    /* a chord into SEQ ARP: the echo of 40 lands on 45, which the chord still
+     * holds — it waits, so the arp keeps 45 */
+    {
+        static const char *const set[] = { "delay_repeats 1", "delay_time 5", "delay_pitch_fb 5",
+                                           "seq_arp_style 1", "seq_arp_rate 1", NULL };
+        hx_t *h = one(0, 192, set);
+        seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+        clip_t *cl = &inst->tracks[1].clips[0];
+        clip_insert_note(cl, 0, 192, 45, 100);
+        clip_build_steps_from_notes(cl);
+        rig_launch(h, 1, 0);
+        play(h, 16, g_a, &g_an);
+        int late45 = 0;
+        for (int i = 0; i < g_an; i++) late45 += !g_a[i].kind && g_a[i].a == 45 && g_a[i].tick > 100 && g_a[i].tick < 192;
+        char m[96]; snprintf(m, sizeof m, "chord into SEQ ARP: 45 arped %d times after tick 100 (want some)", late45);
+        printf("  %s\n", m);
+        HX_ASSERT(late45 > 0, m);
+        hx_destroy(h);
+    }
+    /* a Conductor "Now" retrigger re-pitches a held note (51 -> 55) while
+     * its echo waits: the echo's off goes to the pitch it went out on, not
+     * the note's new one — no pitch left held (default Gate and fixed, the
+     * echo on the note's own pitch) */
+    for (int fixed = 0; fixed <= 1; fixed++) {
+        hx_t *h = hx_create(NULL);
+        HX_NO_LEAD(h);
+        seq8_instance_t *I = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "scale_aware", "0");
+        hx_set_param(h, "key", "9");
+        hx_set_param(h, "t3_convert_to_conduct", "1");
+        hx_set_param(h, "t3_c0_cond_lock", "1");
+        hx_set_param(h, "t3_c0_step_0_toggle", "60 100");
+        hx_set_param(h, "t3_c0_step_4_toggle", "64 100");
+        hx_set_param(h, "t3_c0_cond_resp", "1 1");
+        hx_set_param(h, "t3_c0_cond_when", "1 1");
+        hx_set_param(h, "t1_c0_step_1_toggle", "60 100");
+        hx_set_param(h, "t1_c0_step_1_gate", "150");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 1");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_time 5");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 0");
+        hx_set_param(h, "t1_c0_pfx_set", fixed ? "delay_gate_fb 1" : "delay_gate_fb 0");
+        hx_set_param(h, "t1_launch_clip", "0");
+        hx_set_param(h, "t3_launch_clip", "0");
+        hx_set_param(h, "transport", "play");
+        for (int g = 0; I->tracks[3].current_step < 14 && g < 4000; g++) hx_render(h, 1);
+        int held = 0;
+        for (int p = 0; p < 128; p++) held += I->tracks[1].pfx.pitch_refcount[p] != 0;
+        char m[96]; snprintf(m, sizeof m, "Conductor retrigger, Gate %s: %d pitches left held", fixed ? "1/64" : "--", held);
+        printf("  %s\n", m);
+        HX_ASSERT(held == 0, m);
         hx_destroy(h);
     }
     printf("PASS: echo fixed gate\n");

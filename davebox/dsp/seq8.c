@@ -536,6 +536,16 @@ typedef struct {
         int8_t   pitch_offset;
         uint8_t  velocity;
         double   gate_factor;
+        /* as the echo was queued at the strike, for its off at the note's
+         * end: its (swung) fire time, the pitches it went out on (a Conductor
+         * "Now" retrigger rewrites gen_notes meanwhile) and which of them
+         * wait for that end (bit j: off at the note's end, not queued with
+         * the on — every default-Gate echo, and the fixed-Gate ones in
+         * pfx_echo_waits) */
+        uint64_t fire_at;
+        uint8_t  qpitch[MAX_GEN_NOTES];
+        uint8_t  qn;
+        uint8_t  waits;
     } reps[MAX_REPEATS];
 } pfx_active_t;
 

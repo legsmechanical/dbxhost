@@ -256,6 +256,7 @@ static void drum_pfx_sched_delay_ons(drum_pfx_t *px, pfx_active_t *an,
         {
             uint64_t ft = base_time + an->reps[i].cumul_delay;
             ft += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter, ft);
+            an->reps[i].fire_at = ft;
             /* a fixed echo Gate: the echo ends on its own, its off queued
              * with its on — both or neither (see pfx_sched_delay_ons) */
             if (an->reps[i].gate_factor < 0.0) {
@@ -288,10 +289,8 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
         uint64_t off  = on_t + (uint64_t)(rg + 0.5);
         off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter,
                    (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
-        {   /* never before its own swung on (see pfx_sched_delay_offs) */
-            const uint64_t on_sw = on_t + swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter, on_t);
-            if (off <= on_sw) off = on_sw + (uint64_t)(rg + 0.5);   /* its own length, from there */
-        }
+        /* never before its own on, as queued (see pfx_sched_delay_offs) */
+        if (off <= an->reps[i].fire_at) off = an->reps[i].fire_at + (uint64_t)(rg + 0.5);
         drum_pfx_q_insert(px, off, off_s, note, 0, 0);
     }
 }
