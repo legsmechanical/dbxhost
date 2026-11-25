@@ -147,6 +147,37 @@ int main(void) {
         HX_ASSERT(last > 150, m);
         hx_destroy(h);
     }
+    /* drum, swing at full: a hit late in an off-beat step, echoes 36 ticks
+     * on, Gate 1/64 and the default — every echo ends after it starts (a
+     * drum lane has no refcount: an off sent first leaves the echo ringing
+     * to the next hit) */
+    for (int fixed = 0; fixed <= 1; fixed++) {
+        hx_t *h = rig(1, fixed);
+        seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+        drum_lane_t *ln = RIG_LANE(inst->tracks[2].drum_clips[0], 1);
+        clip_t *cl = &ln->clip;
+        cl->note_count = 0;
+        clip_insert_note(cl, 58, 6, ln->midi_note, 100);
+        clip_build_steps_from_notes(cl);
+        ln->pfx_params.delay_time_idx = 7;
+        ln->pfx_params.gate_time = 50;
+        hx_set_param(h, "groove_kind", "1");
+        hx_set_param(h, "groove_amt", "100");
+        rig_launch(h, 2, 0);
+        const uint8_t p = ln->midi_note;
+        play(h, 16, g_a, &g_an);
+        int open = 0, bad = 0, ons = 0;
+        for (int i = 0; i < g_an; i++) {
+            if (g_a[i].a != p) continue;
+            if (g_a[i].kind == 0) { if (open) bad++; open = 1; ons++; }
+            else if (g_a[i].kind == 3) open = 0;
+        }
+        bad += open;
+        char m[112]; snprintf(m, sizeof m, "drum, swing, Gate %s: %d of %d hits and echoes never ended on their own", fixed ? "1/64" : "--", bad, ons);
+        printf("  %s\n", m);
+        HX_ASSERT(ons >= 3 && bad == 0, m);
+        hx_destroy(h);
+    }
     printf("PASS: echo fixed gate\n");
     return 0;
 }
