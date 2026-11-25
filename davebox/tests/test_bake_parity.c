@@ -160,6 +160,30 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ...and its Arp Steps column starts there: a phrase at tick 102 plays
+     * pattern step 1 first (an interval on it: +7 degrees), not the step the
+     * clip's count would give (4) */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    inst->pad_key = 0; inst->pad_scale = 0;
+    hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        cl->notes[0].tick = 102; cl->notes[0].gate = 30;
+        clip_build_steps_from_notes(cl);
+    }
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_style 1");
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_rate 1");
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_sync 0");
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_step_int 0 7");
+    hx_set_param(h, "bake", "1 0 0 1 0 0");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        const int ni = find_note(cl, 102, -1);
+        HX_ASSERT(ni >= 0 && cl->notes[ni].pitch > 60, "A3: the phrase's first note is pattern step 1 (its interval)");
+    }
+    hx_destroy(h);
+
     printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate, A3 phrase start)\n");
     return 0;
 }
