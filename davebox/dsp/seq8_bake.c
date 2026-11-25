@@ -45,6 +45,16 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
          * onset wraps to the first note + clip_ticks, matching the steady-state
          * loop. (delay_retrig=0 = legacy overlapping tails, no truncation.) */
         uint32_t echo_limit = max_echo_tick;
+        /* A chord with Retrig: each of its notes is its own note-on, and each
+         * drains the echoes the one before it just queued — only the chord's
+         * LAST note keeps its echoes (a harmony copy shares its note's
+         * note-on: same primary). Melodic, as the cut below. */
+        if (note_gate && fx->delay_retrig) {
+            int j, later = 0;
+            for (j = ni + 1; j < in_count && !later; j++)
+                later = in[j].tick == in[ni].tick && in[j].prim != in[ni].prim;
+            if (later) continue;
+        }
         if (fx->delay_retrig) {
             uint32_t src = in[ni].tick, nextOn = UINT32_MAX, firstOn = UINT32_MAX;
             int j;
@@ -59,11 +69,10 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
         for (rep = 0; rep < fx->repeat_times && oc < out_max; rep++) {
             cumul += cur_delay;
             uint32_t echo_tick = in[ni].tick + (uint32_t)(cumul + 0.5);
-            /* an echo due on the very tick of the next note still plays:
-             * playback fires the queue before that note's Retrig drains it
-             * (mostly — by a sample it can go either way) */
-            if (note_gate && fx->delay_retrig ? echo_tick > echo_limit || echo_tick >= max_echo_tick
-                                              : echo_tick >= echo_limit) break;
+            /* an echo due on the very tick of the next note: playback mostly
+             * drops it (or sends its on and off together) — by a sample it can
+             * go either way, and dropping is the closer rule */
+            if (echo_tick >= echo_limit) break;
             if (fx->fb_note_random > 0) {
                 int rng = fx->fb_note_random;
                 int lim = rng;
@@ -127,11 +136,22 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
              * after that drains the queue — sending those offs at once. So the
              * echo ends at the first onset that is past both its start and its
              * note's end (wrapping to the next pass, as the loop plays).
-             * Melodic only, like the two rules above: a drum lane's echoes
+             * Melodic only, like the chord rule above: a drum lane's echoes
              * repeat its hit's own pitch and are an open question of their
              * own (checked against playback: tests/test_bake_echo_live.c). */
             if (note_gate && fx->delay_retrig) {
-                const uint32_t src_end = in[ni].tick + in[ni].gate;
+                /* the note ends at its gate, or sooner where it strikes again
+                 * (playback ends it there: its next pass, or the same key) */
+                uint32_t src_end = in[ni].tick + in[ni].gate;
+                {
+                    int j;
+                    for (j = 0; j < in_count; j++) {
+                        if (in[j].prim != in[ni].prim) continue;
+                        uint32_t tj = in[j].tick;
+                        while (tj <= in[ni].tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
+                        if (tj < src_end) src_end = tj;
+                    }
+                }
                 uint32_t cut = UINT32_MAX;
                 int j;
                 for (j = 0; j < in_count; j++) {

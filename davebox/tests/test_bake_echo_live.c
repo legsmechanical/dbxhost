@@ -32,11 +32,14 @@ static int to_notes(const ev_t *e, int n, nt_t *out, uint32_t end) {
 static long g_slack, g_ties;
 static uint32_t g_span;            /* the clip's loop, in ticks */
 static uint32_t g_ons[4]; static int g_non;
-/* An echo due on the very tick a note starts (Retrig on): playback fires one
- * or the other first by a sample — at some tempos the echo plays, at others
- * the note's Retrig drops it. A tie, counted; a zero-length note is silence. */
+/* An ECHO due on the very tick a note starts (Retrig on): playback fires one
+ * or the other first by a sample — mostly the note's Retrig drops the echo
+ * (as the bake does), sometimes it plays. A tie, counted; never a note of
+ * the clip itself. A zero-length note is silence. */
+static uint8_t g_pit[4];
 static int tie(const nt_t *x) {
     if (x->off == x->on) return 1;
+    for (int i = 0; i < g_non; i++) if (x->p == g_pit[i]) return 0;     /* a note itself: never */
     for (int i = 0; i < g_non; i++) if (x->on % g_span == g_ons[i] % g_span) return 1;
     return 0;
 }
@@ -54,7 +57,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
                 && A[q].on + 1 >= B[j].on && A[q].on <= B[j].on + 1
                 && A[q].off + 1 >= B[j].off && A[q].off <= B[j].off + 1) k = q;
         if (k < 0 && tie(&B[j])) { g_ties++; continue; }
-        if (k < 0) { bad++; if (verbose && bad <= 6) printf("    only baked: %u @%u-%u\n", B[j].p, B[j].on, B[j].off); continue; }
+        if (k < 0) { bad++; if (verbose && bad <= 20) printf("    only baked: %u @%u-%u\n", B[j].p, B[j].on, B[j].off); continue; }
         g_slack += A[k].on != B[j].on || A[k].off != B[j].off;
         used[k] = 1;
     }
@@ -63,7 +66,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
             int edge = A[q].on < w0 || A[q].on >= w1;      /* slack across the window's edge */
             if (edge) continue;
             if (tie(&A[q])) { g_ties++; continue; }
-            bad++; if (verbose && bad <= 12) printf("    only live:  %u @%u-%u\n", A[q].p, A[q].on, A[q].off);
+            bad++; if (verbose && bad <= 40) printf("    only live:  %u @%u-%u\n", A[q].p, A[q].on, A[q].off);
         }
     return bad;
 }
@@ -93,16 +96,20 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     const int span = L * tps, nn = 1 + (int)rnd(3);
     int at = 0, w = 0;
     for (int i = 0; i < nn; i++) {
-        const int tk = at + (int)rnd((uint32_t)(span / nn));
-        const int g = 1 + (int)rnd((uint32_t)(span - 1));   /* shorter than the loop */
+        /* now and then a chord: on the tick of the note before */
+        const int tk = (i && rnd(3) == 0) ? (int)g_ons[i - 1] : at + (int)rnd((uint32_t)(span / nn));
+        /* shorter than the loop: in this harness playback goes silent after
+         * a note longer than its loop (a matter of its own, kept out) */
+        const int g = 1 + (int)rnd((uint32_t)(span - 1));
         const uint8_t p = g_drum ? ln->midi_note : (uint8_t)(36 + 24 * i);
-        if (g_non < 4) g_ons[g_non++] = (uint32_t)tk;
+        if (g_non < 4) { g_pit[g_non] = p; g_ons[g_non++] = (uint32_t)tk; }
         clip_insert_note(cl, (uint32_t)tk, (uint16_t)g, p, 90);
         w += snprintf(desc + w, dn - w, " n%u@%d+%d", p, tk, g);
         at += span / nn;
     }
     clip_build_steps_from_notes(cl);
-    const int dt = (int)rnd(8), rep = 1 + (int)rnd(3), pfb = 1 + (int)rnd(5), rt = (int)rnd(2);
+    const int dt = (int)rnd(8), rep = 1 + (int)rnd(3), rt = (int)rnd(2);
+    const int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : 1 + (int)rnd(5);
     const int fg = getenv("BEL_FG") && rnd(3) == 0 ? 1 + (int)rnd(5) : 0;
     if (g_drum) {
         ln->pfx_params.delay_level = 127; ln->pfx_params.repeat_times = rep;
@@ -152,6 +159,7 @@ int main(int argc, char **argv) {
         char desc[256];
         hx_t *h = setup(seed, 0, desc, sizeof desc);
         play(h, g_span * 5 / TICKS_PER_STEP, g_a, &g_an);
+        if (getenv("BEL_DUMP")) for (int i = 0; i < g_an; i++) printf("    live %d %u @%u\n", g_a[i].kind, g_a[i].a, g_a[i].tick);
         hx_destroy(h);
         h = setup(seed, 1, desc, sizeof desc);
         seq8_instance_t *inst = (seq8_instance_t *)h->inst;
