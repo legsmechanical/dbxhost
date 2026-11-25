@@ -7,23 +7,23 @@
  * third pass on, every note-on and note-off is compared. Two instances with
  * the same seed: one plays, the other bakes. Pitches are spread so no two
  * sounding notes share a pitch (a shared pitch is a different question).
- * BEL_KIND=1 runs drum lanes instead, BEL_PFB=0 echoes on the note's own
- * pitch — both still differ from playback, and are open. */
+ * BEL_KIND=1 runs drum lanes instead (still differ from playback: open);
+ * BEL_PFB=n forces the pitch feedback. */
 #include "pfx_rig.h"
 
 /* Notes as heard: an on opens its pitch, the next off closes it; an off for
  * a pitch not sounding is dropped (playback's Retrig sends offs for echoes
  * that never started — the synth ignores them). One tick of slack each way,
  * counted: playback times an echo in samples. */
-typedef struct { uint32_t on, off; uint8_t p, v; } nt_t;
+typedef struct { uint32_t on, off; uint8_t p, v, cut; } nt_t;   /* cut: ended by a restrike, not its own off */
 static int to_notes(const ev_t *e, int n, nt_t *out, uint32_t end) {
     int open[128], k = 0;
     for (int p = 0; p < 128; p++) open[p] = -1;
     for (int i = 0; i < n; i++) {
         const uint8_t p = e[i].a & 0x7F;
         if (e[i].kind == 0) {
-            if (open[p] >= 0) out[open[p]].off = e[i].tick;   /* a restrike ends it */
-            out[k] = (nt_t){ e[i].tick, UINT32_MAX, p, e[i].b }; open[p] = k++;
+            if (open[p] >= 0) { out[open[p]].off = e[i].tick; out[open[p]].cut = 1; }   /* a restrike ends it */
+            out[k] = (nt_t){ e[i].tick, UINT32_MAX, p, e[i].b, 0 }; open[p] = k++;
         } else if (e[i].kind == 3 && open[p] >= 0) { out[open[p]].off = e[i].tick; open[p] = -1; }
     }
     for (int i = 0; i < k; i++) if (out[i].off == UINT32_MAX) out[i].off = end;
@@ -32,15 +32,92 @@ static int to_notes(const ev_t *e, int n, nt_t *out, uint32_t end) {
 static long g_slack, g_ties;
 static uint32_t g_span;            /* the clip's loop, in ticks */
 static uint32_t g_ons[4]; static int g_non;
+static long g_tie_why[6];
+/* a pitch playback itself plays differently pass to pass (an echo on the
+ * very tick of a strike: dropped by its drain one pass, sounding the next,
+ * by which comes first by a sample) — no bake can match both */
+static uint8_t g_unsteady[128];
+static void find_unsteady(const nt_t *A, int an, uint32_t w0) {
+    memset(g_unsteady, 0, sizeof g_unsteady);
+    for (int i = 0; i < an; i++) {
+        if (A[i].on < w0 || A[i].on >= w0 + g_span) continue;
+        int twin = 0;
+        for (int k = 0; k < an && !twin; k++)
+            twin = A[k].p == A[i].p && A[k].on == A[i].on + g_span && A[k].off + 1 >= A[i].off + g_span && A[k].off <= A[i].off + g_span + 1;
+        if (!twin) g_unsteady[A[i].p] = 1;
+    }
+    for (int k = 0; k < an; k++) {
+        if (A[k].on < w0 + g_span || A[k].on >= w0 + 2 * g_span) continue;
+        int twin = 0;
+        for (int i = 0; i < an && !twin; i++)
+            twin = A[i].p == A[k].p && A[i].on + g_span == A[k].on;
+        if (!twin) g_unsteady[A[k].p] = 1;
+    }
+}
+/* the same note, ending differently where one side ends it on the tick a
+ * note of the clip strikes: an echo due on that tick is drained by the strike
+ * (its off cuts the pitch) or sounds first (holding it on) by a sample */
+static int ends_on_strike(const nt_t *x, const nt_t *o, int on_) {
+    for (int i = 0; i < on_; i++) {
+        if (o[i].p != x->p || o[i].on + 1 < x->on || o[i].on > x->on + 1) continue;
+        for (int k = 0; k < g_non; k++) {
+            const uint32_t s = g_ons[k] % g_span;
+            if (x->off % g_span == s || o[i].off % g_span == s) { g_tie_why[4]++; return 1; }
+        }
+    }
+    return 0;
+}
+static int unsteady(const nt_t *x) { if (!g_unsteady[x->p]) return 0; g_tie_why[4]++; return 1; }
+/* a piece of a note playback split where the bake joined: contained in one
+ * baked note, and playback strikes the pitch again at one of its edges */
+static int split(const nt_t *x, const nt_t *self, int sn, const nt_t *o, int on_) {
+    int in = 0, again = 0;
+    for (int i = 0; i < on_ && !in; i++) in = o[i].p == x->p && o[i].on <= x->on + 1 && o[i].off + 1 >= x->off;
+    for (int i = 0; i < sn && !again; i++)
+        again = self[i].p == x->p && &self[i] != x
+             && ((self[i].on + 1 >= x->off && self[i].on <= x->off + 1)              /* struck again where it ends */
+              || (self[i].off + 1 >= x->on && self[i].off <= x->on + 1 && !self[i].cut));   /* or where it starts, the one before ended */
+    if (!in || !again || x->cut) return 0;           /* restruck, not ended: a restrike, not a tie */
+    g_tie_why[5]++;
+    return 1;
+}
+/* one echo ending on the very tick the next of its pitch starts: playback
+ * may restrike there, by which comes first by a sample, where the bake joins
+ * them — a baked note excused where playback has the same span of the pitch
+ * split edge to edge (one tick of slack). Only that way round: a bake that
+ * restrikes where playback joins is the very fault this test is for. */
+static int joined(const nt_t *x, const nt_t *o, int on_) {
+    uint32_t at = x->on, guard = 0;
+    while (at + 1 < x->off && guard++ < 64) {
+        int nx = -1;
+        for (int i = 0; i < on_ && nx < 0; i++)
+            if (o[i].p == x->p && o[i].on <= at + 1 && o[i].off > at + 1) nx = i;
+        if (nx < 0) return 0;
+        at = o[nx].off;
+        if (o[nx].cut && at + 1 < x->off) return 0;   /* restruck, not ended: a restrike, not a tie */
+    }
+    if (at + 1 < x->off || at > x->off + 1) return 0;
+    g_tie_why[3]++;
+    return 1;
+}
+/* held a whole loop or more (echoes merging on one pitch across the loop
+ * point): a looping clip cannot hold a note past its own next pass — excused
+ * only where the other side has that pitch sounding through it too */
+static int held_loop(const nt_t *x, const nt_t *o, int on_) {
+    if (x->off - x->on < g_span) return 0;
+    for (int i = 0; i < on_; i++)
+        if (o[i].p == x->p && o[i].on < x->off && o[i].off > x->on) { g_tie_why[1]++; return 1; }
+    return 0;
+}
 /* An ECHO due on the very tick a note starts (Retrig on): playback fires one
  * or the other first by a sample — mostly the note's Retrig drops the echo
  * (as the bake does), sometimes it plays. A tie, counted; never a note of
  * the clip itself. A zero-length note is silence. */
 static uint8_t g_pit[4];
 static int tie(const nt_t *x) {
-    if (x->off == x->on) return 1;
+    if (x->off == x->on) { g_tie_why[0]++; return 1; }
     for (int i = 0; i < g_non; i++) if (x->p == g_pit[i]) return 0;     /* a note itself: never */
-    for (int i = 0; i < g_non; i++) if (x->on % g_span == g_ons[i] % g_span) return 1;
+    for (int i = 0; i < g_non; i++) if (x->on % g_span == g_ons[i] % g_span) { g_tie_why[2]++; return 1; }
     return 0;
 }
 static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
@@ -48,6 +125,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
     static char used[EV_MAX];
     const int an = to_notes(g_a, g_an, A, end), bn = to_notes(g_b, g_bn, B, end);
     int bad = 0;
+    find_unsteady(A, an, w0);
     memset(used, 0, sizeof used);
     for (int j = 0; j < bn; j++) {
         if (B[j].on < w0 || B[j].on >= w1) continue;
@@ -56,7 +134,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
             if (!used[q] && A[q].p == B[j].p && A[q].v == B[j].v
                 && A[q].on + 1 >= B[j].on && A[q].on <= B[j].on + 1
                 && A[q].off + 1 >= B[j].off && A[q].off <= B[j].off + 1) k = q;
-        if (k < 0 && tie(&B[j])) { g_ties++; continue; }
+        if (k < 0 && (tie(&B[j]) || held_loop(&B[j], A, an) || joined(&B[j], A, an) || unsteady(&B[j]) || ends_on_strike(&B[j], A, an))) { g_ties++; continue; }
         if (k < 0) { bad++; if (verbose && bad <= 20) printf("    only baked: %u @%u-%u\n", B[j].p, B[j].on, B[j].off); continue; }
         g_slack += A[k].on != B[j].on || A[k].off != B[j].off;
         used[k] = 1;
@@ -65,7 +143,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
         if (!used[q] && A[q].on + 1 >= w0 && A[q].on <= w1) {
             int edge = A[q].on < w0 || A[q].on >= w1;      /* slack across the window's edge */
             if (edge) continue;
-            if (tie(&A[q])) { g_ties++; continue; }
+            if (tie(&A[q]) || held_loop(&A[q], B, bn) || split(&A[q], A, an, B, bn) || unsteady(&A[q]) || ends_on_strike(&A[q], B, bn)) { g_ties++; continue; }
             bad++; if (verbose && bad <= 40) printf("    only live:  %u @%u-%u\n", A[q].p, A[q].on, A[q].off);
         }
     return bad;
@@ -109,7 +187,9 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     }
     clip_build_steps_from_notes(cl);
     const int dt = (int)rnd(8), rep = 1 + (int)rnd(3), rt = (int)rnd(2);
-    const int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : 1 + (int)rnd(5);
+    /* pitch feedback 0 (the default: echoes on the note's own pitch, merging
+     * as playback's output count merges them) a third of the time */
+    const int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : (rnd(3) == 0 ? 0 : 1 + (int)rnd(5));
     const int fg = rnd(3) == 0 ? 1 + (int)rnd(5) : 0;   /* now and then a fixed echo Gate */
     if (g_drum) {
         ln->pfx_params.delay_level = 127; ln->pfx_params.repeat_times = rep;
@@ -143,6 +223,7 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
         if (!same) { printf("  seed %d: the export (%d notes) differs from the bake (%d)\n", seed, en, cl->note_count); g_export_bad++; }
     } else if (bake) hx_set_param(h, "bake", "2 0 1 1 1 1");
     g_span = (uint32_t)span;
+    if (getenv("BEL_DESC")) { clip_t *c2 = g_drum ? &RIG_LANE(inst->tracks[2].drum_clips[0], 1)->clip : &inst->tracks[1].clips[0]; printf("  setup seed %d bake %d:%s | notes %d len %u\n", seed, bake, desc, c2->note_count, c2->length); }
     rig_launch(h, g_drum ? 2 : 1, 0);
     return h;
 }
@@ -176,6 +257,7 @@ int main(int argc, char **argv) {
         hx_destroy(h);
     }
     printf("  bake echoes vs live, seeds %d..%d: %d failed, %ld notes compared, %ld a tick apart, %ld same-tick ties\n", s0, s1, fails, cmp, g_slack, g_ties);
+    printf("  ties: %ld zero-length, %ld held a loop or more, %ld an echo on a note's tick, %ld joined edge to edge, %ld split where joined, %ld playback unsteady pass to pass or ending on a strike\n", g_tie_why[0], g_tie_why[1], g_tie_why[2], g_tie_why[3], g_tie_why[5], g_tie_why[4]);
     HX_ASSERT(cmp > 0, "control: something was compared");
     HX_ASSERT(fails == 0, "a baked clip's echoes start and end as the live ones");
     HX_ASSERT(g_export_bad == 0, "the Ableton export renders the notes the bake writes");

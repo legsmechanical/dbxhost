@@ -35,7 +35,8 @@ the section into a versioned heading at release time.
   rang until the note it echoed was released, so a short Gate on a held note did nothing.
 - **Baked echoes sound as they play**: on a melodic track, a baked MIDI delay echo is now as long
   as the note it echoes (it was always short), and with Retrig on a new note cuts the echoes still
-  ringing, as it does live.
+  ringing, as it does live. Echoes on the note's own pitch (pitch feedback 0, the default) now bake
+  as one held note where they overlap, as they play, instead of a run of restrikes.
 - **Baked SEQ ARP starts where it plays**: a baked arpeggio now starts on its first note with Sync
   off (and on the next beat of its rate with Sync on), and its Arp Steps pattern starts there too, as
   it does when it plays. It used to wait for a rate boundary and keep the clip's own step count.
