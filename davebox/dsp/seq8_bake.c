@@ -172,8 +172,12 @@ static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t cli
         if (a.held_count == 0) continue;
 
         if (a.pending_first_note) {
-            uint32_t total = master_tick - a.master_anchor;
-            if ((total % rate) != 0) continue;
+            /* A phrase begins (nothing was held), as arp_tick starts one: Sync
+             * waits for the clock's rate boundary (the clock restarts with the
+             * transport: the clip's top), free starts on the note (ruled
+             * 2026-11-21); either way the Arp Steps column re-anchors there. */
+            if (fx->seq_arp_sync && (master_tick % rate) != 0) continue;
+            a.master_anchor = master_tick;
             a.pending_first_note = 0;
             /* fall through to fire */
         } else {

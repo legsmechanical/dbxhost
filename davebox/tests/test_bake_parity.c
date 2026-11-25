@@ -133,6 +133,33 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate)\n");
+    /* ---- A3: a phrase starts as playback starts it (arp_tick): Sync off
+     * fires on the note (ruled 2026-11-21), Sync on waits for the rate
+     * boundary; either way the Arp Steps column re-anchors there. A note at
+     * tick 6 (rate 1/16 = 24 ticks): free fires at 6, synced at 24. */
+    for (int sync = 0; sync <= 1; sync++) {
+        h = hx_create(NULL);
+        inst = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+        {
+            clip_t *cl = &inst->tracks[1].clips[0];
+            cl->notes[0].tick = 6; cl->notes[0].gate = 40;
+            clip_build_steps_from_notes(cl);
+        }
+        hx_set_param(h, "t1_c0_pfx_set", "seq_arp_style 1");
+        hx_set_param(h, "t1_c0_pfx_set", "seq_arp_rate 1");
+        hx_set_param(h, "t1_c0_pfx_set", sync ? "seq_arp_sync 1" : "seq_arp_sync 0");
+        hx_set_param(h, "bake", "1 0 0 1 0 0");
+        {
+            clip_t *cl = &inst->tracks[1].clips[0];
+            uint32_t first = UINT32_MAX;
+            for (int i = 0; i < cl->note_count; i++) if (cl->notes[i].active && cl->notes[i].tick < first) first = cl->notes[i].tick;
+            char m[96]; snprintf(m, sizeof m, "A3: Sync %s, the first arp note at %u (want %u)", sync ? "on" : "off", first, sync ? 24u : 6u);
+            HX_ASSERT(first == (sync ? 24u : 6u), m);
+        }
+        hx_destroy(h);
+    }
+
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate, A3 phrase start)\n");
     return 0;
 }

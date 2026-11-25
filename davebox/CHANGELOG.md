@@ -26,6 +26,9 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **Baked SEQ ARP starts where it plays**: a baked arpeggio now starts on its first note with Sync
+  off (and on the next beat of its rate with Sync on), and its Arp Steps pattern starts there too, as
+  it does when it plays. It used to wait for a rate boundary and keep the clip's own step count.
 
 #### Timing and playback
 - **Every track follows the Conductor on the same step**, whatever its track number.
