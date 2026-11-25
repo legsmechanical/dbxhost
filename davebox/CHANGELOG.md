@@ -26,6 +26,8 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **No more stuck delay echoes**: echoes could hang on with swing (at some tempos), after a
+  Conductor "Now" retrigger, or when a lot of echoes were in flight at once.
 - **DELAY's Gate is honoured**: with a fixed Gate set, an echo is that long. Before, every echo
   rang until the note it echoed was released, so a short Gate on a held note did nothing.
 - **Baked echoes sound as they play**: on a melodic track, a baked MIDI delay echo is now as long
