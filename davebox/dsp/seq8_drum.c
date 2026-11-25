@@ -397,8 +397,9 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * comes forward, ahead of it (see pfx_note_on) */
     {
         const uint64_t sounds = now + ((inst->emit_bypass_swing || inst->in_queue_drain) ? 0 : groove_park_now(inst, (int)px->track_idx));
-        if (pfx_offs_before(px->events, &px->event_count, ch, pitch, sounds) && sounds <= now && !inst->in_queue_drain)
-            drum_pfx_q_fire(px, now);   /* never inside a drain: it would re-enter it */
+        pfx_offs_before(px->events, &px->event_count, ch, pitch, sounds);
+        if (sounds <= now && !inst->in_queue_drain)
+            drum_pfx_q_fire(px, now);   /* what is due goes out first (see pfx_note_on); never inside a drain */
     }
     memset(an, 0, sizeof(pfx_active_t));
     an->active        = 1;

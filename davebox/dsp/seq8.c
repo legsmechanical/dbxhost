@@ -4349,17 +4349,13 @@ static void pfx_reset(play_fx_t *fx) {
  * live pad, external MIDI) flow through this function the same way; if
  * arp.on, the chain's emissions get captured into the arp's held buffer
  * and the arp re-emits the picked note via pfx_send with arp_emitting=1. */
-/* A note of `pitch` sounds at `at`: an off a note before it was given past
- * its swung note-on (PFX_EV_HELD: its length kept from where swing let it
- * sound) and still queued past `at` comes forward to `at`, ahead of the new
- * note-on — it must not cut the new note short. Only those: an echo's off
- * moved before its own on would leave the echo ringing. Returns how many
- * moved: when the new note sounds now, the caller fires the queue first, so
- * a moved off due now goes out ahead of it. */
-static int pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, uint64_t at) {
+/* Move every event of the queue matching (status, pitch, flag mask) and due
+ * past `at` to `at`, after the events already there. Returns how many. */
+static int pfx_q_pull(pfx_event_t *ev, int *n, uint8_t status, uint8_t pitch, uint8_t mask, int on, uint64_t at) {
     int i, moved = 0;
     for (i = 0; i < *n; i++) {
-        if (!(ev[i].flags & PFX_EV_HELD) || ev[i].msg[0] != (uint8_t)(0x80 | ch) || ev[i].msg[1] != pitch || ev[i].fire_at <= at) continue;
+        if (!(ev[i].flags & mask) || ev[i].msg[0] != status || ev[i].msg[1] != pitch || ev[i].fire_at <= at) continue;
+        if (on != (ev[i].msg[2] > 0)) continue;
         pfx_event_t e = ev[i];
         memmove(&ev[i], &ev[i + 1], (size_t)(*n - i - 1) * sizeof *ev);
         (*n)--;
@@ -4372,6 +4368,19 @@ static int pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, u
         moved++;
     }
     return moved;
+}
+
+/* A note of `pitch` sounds at `at`. What a note of the pitch before it still
+ * has queued past `at` comes forward to `at`, ahead of the new note-on, so it
+ * cannot cut the new note short: its note-on held back by swing (the two
+ * collide: the older one sounds first, for no time), then its off — given
+ * past its swung note-on (PFX_EV_HELD: its length kept) or held back by
+ * swing (PFX_EV_BYPASS_SWING). Never an echo's off (unflagged): one moved
+ * before its own on would leave the echo ringing. When the new note sounds
+ * now, the caller then fires what is due, so all of it goes out first. */
+static void pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, uint64_t at) {
+    pfx_q_pull(ev, n, (uint8_t)(0x90 | ch), pitch, PFX_EV_BYPASS_SWING, 1, at);
+    pfx_q_pull(ev, n, (uint8_t)(0x80 | ch), pitch, PFX_EV_HELD | PFX_EV_BYPASS_SWING, 0, at);
 }
 
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
@@ -4526,9 +4535,11 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     {
         const uint64_t sounds = now + ((inst->emit_bypass_swing || inst->in_queue_drain) ? 0
                                        : groove_park_now(inst, (int)fx->track_idx));
-        int moved = 0;
-        for (i = 0; i < gc; i++) moved += pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
-        if (moved && sounds <= now && !inst->in_queue_drain) pfx_q_fire(fx, now);   /* never inside a drain: it would re-enter it */
+        for (i = 0; i < gc; i++) pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
+        /* sounding now: what is already due goes out first, in time order
+         * (a moved off, an older note-on parked to this instant) — never
+         * from inside a drain, which would re-enter it */
+        if (sounds <= now && !inst->in_queue_drain) pfx_q_fire(fx, now);
     }
     for (i = 0; i < gc; i++)
         pfx_send(fx, on_s, gen[i], (uint8_t)v);

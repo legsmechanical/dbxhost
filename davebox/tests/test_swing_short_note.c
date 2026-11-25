@@ -65,6 +65,52 @@ int main(void) {
     for (int g = 0; g < 4; g++) for (uint32_t at = 24; at < 72; at += 5)
         one(drum, bpms[b], kind, amts[a], at, gates[g]);
     printf("  %d runs, %d with a note ending before it starts or left sounding, %d zero-length\n", g_runs, g_bad, g_short);
+    /* the next note of the pitch, on the on-time step: the swung note before
+     * it kept its length, so its off is brought forward — and goes out ahead
+     * of the new note, never just after it (which would cut it to nothing) */
+    {
+        int cut = 0, n = 0;
+        for (int drum = 0; drum <= 1; drum++) for (int a = 0; a < 4; a++) for (uint32_t at = 30; at < 48; at += 3) {
+            hx_t *h = hx_create(NULL);
+            seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+            HX_NO_LEAD(h);
+            hx_set_param(h, "bpm", "120");
+            clip_t *cl; uint8_t p;
+            if (drum) {
+                hx_set_param(h, "t2_l0_note_add", "0 100 6");
+                drum_lane_t *ln = RIG_LANE(inst->tracks[2].drum_clips[0], 1);
+                cl = &ln->clip; p = ln->midi_note; ln->pfx_params.gate_time = 100;
+            } else {
+                hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+                cl = &inst->tracks[1].clips[0]; p = 40;
+            }
+            cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 16; cl->loop_start = 0;
+            clip_insert_note(cl, at, 12, p, 100);
+            clip_insert_note(cl, 48, 12, p, 100);
+            clip_build_steps_from_notes(cl);
+            char v[16];
+            hx_set_param(h, "groove_kind", "1");
+            snprintf(v, sizeof v, "%d", amts[a]); hx_set_param(h, "groove_amt", v);
+            rig_launch(h, drum ? 2 : 1, 0);
+            play(h, 32, g_a, &g_an);
+            /* the note at 48 (and 432): its length */
+            for (int i = 0; i < g_an; i++) {
+                if (g_a[i].a != p || g_a[i].kind || (g_a[i].tick != 48 && g_a[i].tick != 432)) continue;
+                /* the LAST note-on of the pitch on that tick is the new note
+                 * (an older one swung onto it sounds first, for no time) */
+                int later = 0;
+                for (int k = i + 1; k < g_an && !later; k++) later = g_a[k].a == p && !g_a[k].kind && g_a[k].tick == g_a[i].tick;
+                if (later) continue;
+                n++;
+                for (int k = i + 1; k < g_an; k++)
+                    if (g_a[k].a == p && (g_a[k].kind == 3 || g_a[k].kind == 0)) { if (g_a[k].tick - g_a[i].tick < 3) { cut++; if (getenv("SSN_DUMP")) { printf("    %s amt %d at %u:", drum ? "drum" : "mel", amts[a], at); for (int q = 0; q < g_an && q < 30; q++) if (g_a[q].a == p) printf(" %s@%u", g_a[q].kind == 0 ? "ON" : g_a[q].kind == 3 ? "off" : "?", g_a[q].tick); printf("\n"); } } break; }
+            }
+            hx_destroy(h);
+        }
+        char m[96]; snprintf(m, sizeof m, "the next note of the pitch: %d of %d cut short", cut, n);
+        printf("  %s\n", m);
+        HX_ASSERT(n > 0 && cut == 0, m);
+    }
     HX_ASSERT(g_bad == 0, "under swing a note never ends before it starts");
     printf("PASS: swing short note\n");
     return 0;
