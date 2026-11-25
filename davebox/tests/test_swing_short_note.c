@@ -56,6 +56,40 @@ static void one(int drum, const char *bpm, int kind, int amt, uint32_t at, uint1
     hx_destroy(h);
 }
 
+/* Live Merge capturing: a short swung note's off — moved past its parked
+ * note-on — must reach the capture, or the note is written lasting to the end
+ * of it. 1 = the captured note was closed by its off. */
+static int merged_closed(int drum, int amt, uint32_t at, uint16_t gate) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    HX_NO_LEAD(h);
+    hx_set_param(h, "bpm", "120");
+    clip_t *cl; uint8_t p; const int t = drum ? 2 : 1;
+    if (drum) {
+        hx_set_param(h, "t2_l0_note_add", "0 100 6");
+        drum_lane_t *ln = RIG_LANE(inst->tracks[2].drum_clips[0], 1);
+        cl = &ln->clip; p = ln->midi_note; ln->pfx_params.gate_time = 20;
+    } else { hx_set_param(h, "t1_c0_step_0_toggle", "40 100"); cl = &inst->tracks[1].clips[0]; p = 40; }
+    cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 16; cl->loop_start = 0;
+    clip_insert_note(cl, at, gate, p, 100);
+    clip_build_steps_from_notes(cl);
+    char v[16];
+    hx_set_param(h, "groove_kind", "1");
+    snprintf(v, sizeof v, "%d", amt); hx_set_param(h, "groove_amt", v);
+    rig_launch(h, t, 0);
+    rig_play(h);
+    hx_render(h, 1);
+    inst->merge_state = MERGE_STATE_CAPTURING; inst->merge_solo_track = 0xFF; inst->merge_tps = 24;
+    inst->merge_start_abs = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
+    memset(inst->merge_pending_count, 0, sizeof inst->merge_pending_count);
+    for (int g = 0; inst->playing && rig_now(h) < ST(14) && g < 4000000; g++) hx_render(h, 1);
+    int closed = -1;
+    for (int i = 0; i < inst->merge_pending_count[t]; i++) if (inst->merge_pending[t][i].pitch == p) closed = inst->merge_pending[t][i].gate != 0;
+    hx_set_param(h, "transport", "stop");
+    hx_destroy(h);
+    return closed;
+}
+
 int main(void) {
     static const char *const bpms[] = { "77", "120", "133", "174" };
     static const int amts[] = { 30, 60, 80, 100 };
@@ -112,6 +146,14 @@ int main(void) {
         HX_ASSERT(n > 0 && cut == 0, m);
     }
     HX_ASSERT(g_bad == 0, "under swing a note never ends before it starts");
+    {
+        int open = 0, n = 0;
+        for (int drum = 0; drum <= 1; drum++) for (int a = 0; a < 4; a++) for (uint32_t at = 24; at < 48; at += 5)
+            for (int g = 0; g < 4; g++) { const int c = merged_closed(drum, amts[a], at, gates[g]); n++; open += c != 1; }
+        char m[96]; snprintf(m, sizeof m, "Live Merge: %d of %d short swung notes captured without their off", open, n);
+        printf("  %s\n", m);
+        HX_ASSERT(open == 0, m);
+    }
     printf("PASS: swing short note\n");
     return 0;
 }
