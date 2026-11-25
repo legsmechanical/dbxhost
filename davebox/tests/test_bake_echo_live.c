@@ -68,7 +68,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
     return bad;
 }
 
-static int g_drum;
+static int g_drum, g_export_bad;
 static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     static const int TPS[] = { 12, 24, 48 };
     rs = (uint32_t)seed * 2654435761u;
@@ -120,7 +120,21 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     }
     w += snprintf(desc + w, dn - w, " | %s tps%d L%d dt%d rep%d pfb%d rt%d fg%d g%d", g_drum ? "drum" : "melodic",
                   tps, L, dt, rep, pfb, rt, fg, ln ? ln->pfx_params.gate_time : 100);
-    if (bake) hx_set_param(h, "bake", g_drum ? "2 0 1 1 1 1" : "1 0 0 1 0 1");
+    if (bake && !g_drum) {
+        /* the Ableton export renders the same echoes, without baking */
+        static bake_note_t ex[BAKE_BUF];
+        uint32_t esp = 0, ecy = 0;
+        const int en = render_melodic_clip(inst, 1, 0, 1, 0, ex, BAKE_BUF, &esp, &ecy, 0);
+        hx_set_param(h, "bake", "1 0 0 1 0 1");
+        int same = en == cl->note_count;
+        for (int i = 0; same && i < en; i++) {
+            int hit = 0;
+            for (int j = 0; j < cl->note_count && !hit; j++)
+                hit = cl->notes[j].tick == ex[i].tick && cl->notes[j].pitch == ex[i].pitch && cl->notes[j].gate == ex[i].gate;
+            same = hit;
+        }
+        if (!same) { printf("  seed %d: the export (%d notes) differs from the bake (%d)\n", seed, en, cl->note_count); g_export_bad++; }
+    } else if (bake) hx_set_param(h, "bake", "2 0 1 1 1 1");
     g_span = (uint32_t)span;
     rig_launch(h, g_drum ? 2 : 1, 0);
     return h;
@@ -156,6 +170,7 @@ int main(int argc, char **argv) {
     printf("  bake echoes vs live, seeds %d..%d: %d failed, %ld notes compared, %ld a tick apart, %ld same-tick ties\n", s0, s1, fails, cmp, g_slack, g_ties);
     HX_ASSERT(cmp > 0, "control: something was compared");
     HX_ASSERT(fails == 0, "a baked clip's echoes start and end as the live ones");
+    HX_ASSERT(g_export_bad == 0, "the Ableton export renders the notes the bake writes");
     printf("PASS: bake echo live\n");
     return 0;
 }
