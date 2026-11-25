@@ -1291,7 +1291,7 @@ DELAY echoes every note in rhythm, on melodic and drum tracks.
 | 3 · REPTS | Number of echoes (0 = off). | 0 |
 | 4 · VELFB | Velocity change per repeat. | 0 |
 | 5 · PITFB | Pitch change per repeat (scale-aware). | 0 |
-| 6 · GATE | Fixed echo length (-- = natural). | -- |
+| 6 · GATE | Fixed echo length, kept even while the note it echoes is held (-- = as long as that note). | -- |
 | 7 · RETRG | A new note clears the echoes in flight. | On |
 | 8 · RAND | Pitch randomness on echoes. Alternate (ALGO): Pure, Gaus or Walk. | -- |
 

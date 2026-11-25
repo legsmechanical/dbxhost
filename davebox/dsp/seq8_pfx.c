@@ -222,11 +222,27 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
         ft += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter, ft);
 
         uint8_t  on_s = (uint8_t)(0x90 | an->channel);
+        /* A fixed echo Gate ends the echo on its own, now: its note-off is
+         * queued with its note-on — both or neither, so a full queue cannot
+         * keep the one without the other. (It used to wait for the note it
+         * echoes to end, like a note-gate echo's, so a short Gate rang until
+         * the note was released — ruled a bug 2026-11-25: short means short.) */
+        const int fixed = an->reps[i].gate_factor < 0.0;
+        uint64_t off = 0;
+        if (fixed) {
+            double rg = -an->reps[i].gate_factor;
+            if (rg < 1.0) rg = 1.0;
+            const uint64_t on_t = base_time + an->reps[i].cumul_delay;
+            off = on_t + (uint64_t)(rg + 0.5);
+            off += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter,
+                       (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+        }
         int j;
         for (j = 0; j < an->gen_count; j++) {
-            int note = (int)an->gen_notes[j] + an->reps[i].pitch_offset;
-            note = clamp_i(note, 0, 127);
+            int note = clamp_i((int)an->gen_notes[j] + an->reps[i].pitch_offset, 0, 127);
+            if (fixed && fx->event_count + 2 > MAX_PFX_EVENTS) continue;
             pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, PFX_EV_ECHO);
+            if (fixed) pfx_q_insert(fx, off, (uint8_t)(0x80 | an->channel), (uint8_t)note, 0, 0);
         }
 
         cur_delay *= (1.0 + fx->fb_clock / 100.0);
@@ -241,9 +257,8 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
     uint8_t off_s = (uint8_t)(0x80 | an->channel);
     int i;
     for (i = 0; i < an->stored_repeat_count; i++) {
-        double rg = an->reps[i].gate_factor >= 0.0
-            ? (double)gate_smp * an->reps[i].gate_factor
-            : -an->reps[i].gate_factor;
+        if (an->reps[i].gate_factor < 0.0) continue;   /* a fixed Gate: queued with its note-on */
+        double rg = (double)gate_smp * an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
         uint64_t on_t = base_time + an->reps[i].cumul_delay;
         uint64_t off  = on_t + (uint64_t)(rg + 0.5);

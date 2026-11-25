@@ -7,8 +7,8 @@
  * third pass on, every note-on and note-off is compared. Two instances with
  * the same seed: one plays, the other bakes. Pitches are spread so no two
  * sounding notes share a pitch (a shared pitch is a different question).
- * BEL_FG=1 adds a fixed echo Gate, BEL_KIND=1 runs drum lanes instead — both
- * still differ from playback, and are open. */
+ * BEL_KIND=1 runs drum lanes instead, BEL_PFB=0 echoes on the note's own
+ * pitch — both still differ from playback, and are open. */
 #include "pfx_rig.h"
 
 /* Notes as heard: an on opens its pitch, the next off closes it; an off for
@@ -110,7 +110,7 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     clip_build_steps_from_notes(cl);
     const int dt = (int)rnd(8), rep = 1 + (int)rnd(3), rt = (int)rnd(2);
     const int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : 1 + (int)rnd(5);
-    const int fg = getenv("BEL_FG") && rnd(3) == 0 ? 1 + (int)rnd(5) : 0;
+    const int fg = rnd(3) == 0 ? 1 + (int)rnd(5) : 0;   /* now and then a fixed echo Gate */
     if (g_drum) {
         ln->pfx_params.delay_level = 127; ln->pfx_params.repeat_times = rep;
         ln->pfx_params.delay_time_idx = dt; ln->pfx_params.delay_retrig = rt;

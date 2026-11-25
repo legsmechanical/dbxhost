@@ -256,7 +256,22 @@ static void drum_pfx_sched_delay_ons(drum_pfx_t *px, pfx_active_t *an,
         {
             uint64_t ft = base_time + an->reps[i].cumul_delay;
             ft += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter, ft);
-            drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
+            /* a fixed echo Gate: the echo ends on its own, its off queued
+             * with its on — both or neither (see pfx_sched_delay_ons) */
+            if (an->reps[i].gate_factor < 0.0) {
+                double rg = -an->reps[i].gate_factor;
+                if (rg < 1.0) rg = 1.0;
+                uint64_t on_t = base_time + an->reps[i].cumul_delay;
+                uint64_t off  = on_t + (uint64_t)(rg + 0.5);
+                off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter,
+                           (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+                if (px->event_count + 2 <= DRUM_PFX_MAX_EVENTS) {
+                    drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
+                    drum_pfx_q_insert(px, off, (uint8_t)(0x80 | an->channel), note, 0, 0);
+                }
+            } else {
+                drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
+            }
         }
         cur_delay *= (1.0 + px->fb_clock / 100.0);
         if (cur_delay < 1.0) cur_delay = 1.0;
@@ -269,9 +284,8 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
     uint8_t note  = an->gen_notes[0];
     int i;
     for (i = 0; i < an->stored_repeat_count; i++) {
-        double rg = an->reps[i].gate_factor >= 0.0
-            ? (double)gate_smp * an->reps[i].gate_factor
-            : -an->reps[i].gate_factor;
+        if (an->reps[i].gate_factor < 0.0) continue;   /* a fixed Gate: queued with its note-on */
+        double rg = (double)gate_smp * an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
         uint64_t on_t = base_time + an->reps[i].cumul_delay;
         uint64_t off  = on_t + (uint64_t)(rg + 0.5);
