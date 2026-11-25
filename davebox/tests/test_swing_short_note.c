@@ -103,7 +103,7 @@ int main(void) {
                 if (later) continue;
                 n++;
                 for (int k = i + 1; k < g_an; k++)
-                    if (g_a[k].a == p && (g_a[k].kind == 3 || g_a[k].kind == 0)) { if (g_a[k].tick - g_a[i].tick < 3) { cut++; if (getenv("SSN_DUMP")) { printf("    %s amt %d at %u:", drum ? "drum" : "mel", amts[a], at); for (int q = 0; q < g_an && q < 30; q++) if (g_a[q].a == p) printf(" %s@%u", g_a[q].kind == 0 ? "ON" : g_a[q].kind == 3 ? "off" : "?", g_a[q].tick); printf("\n"); } } break; }
+                    if (g_a[k].a == p && (g_a[k].kind == 3 || g_a[k].kind == 0)) { if (g_a[k].tick - g_a[i].tick < 3) cut++; break; }
             }
             hx_destroy(h);
         }

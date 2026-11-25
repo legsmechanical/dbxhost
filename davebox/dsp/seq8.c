@@ -507,7 +507,8 @@ typedef struct { uint8_t k; uint64_t delay; } groove_early_t;
 #define PFX_EV_KEEP         0x02  /* a table groove's own note-off, timed from its note-on: a later note-on's echo flush may bring it forward, never push it back */
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
 #define PFX_EV_ECHO         0x04  /* a DELAY echo: on an Audio track its velocity is its volume */
-#define PFX_EV_HELD         0x10  /* a note-off moved past its note's swung note-on (its length kept): a next note of the pitch brings it forward */
+#define PFX_EV_HELD         0x10  /* a note-off moved past its note's swung note-on (its length kept): a next note of the pitch brings it forward; a Retrig flush keeps it. Not BYPASS: it fires through pfx_send, so Live Merge, the looper and SEQ ARP see it */
+#define PFX_EV_OWN          0x20  /* a note's own queued note-off (not an echo's): a next note of the pitch may bring it forward */
 #define PFX_EV_WAITS        0x08  /* an echo's on whose off waits for its note's end: the one a full queue may drop then */
 
 typedef struct {
@@ -4374,13 +4375,13 @@ static int pfx_q_pull(pfx_event_t *ev, int *n, uint8_t status, uint8_t pitch, ui
  * has queued past `at` comes forward to `at`, ahead of the new note-on, so it
  * cannot cut the new note short: its note-on held back by swing (the two
  * collide: the older one sounds first, for no time), then its off — given
- * past its swung note-on (PFX_EV_HELD: its length kept) or held back by
- * swing (PFX_EV_BYPASS_SWING). Never an echo's off (unflagged): one moved
+ * past its swung note-on (PFX_EV_HELD: its length kept), its own plain
+ * queued off (PFX_EV_OWN), or held back by swing (PFX_EV_BYPASS_SWING). Never an echo's off (unflagged): one moved
  * before its own on would leave the echo ringing. When the new note sounds
  * now, the caller then fires what is due, so all of it goes out first. */
 static void pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, uint64_t at) {
     pfx_q_pull(ev, n, (uint8_t)(0x90 | ch), pitch, PFX_EV_BYPASS_SWING, 1, at);
-    pfx_q_pull(ev, n, (uint8_t)(0x80 | ch), pitch, PFX_EV_HELD | PFX_EV_BYPASS_SWING, 0, at);
+    pfx_q_pull(ev, n, (uint8_t)(0x80 | ch), pitch, PFX_EV_HELD | PFX_EV_OWN | PFX_EV_BYPASS_SWING, 0, at);
 }
 
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
@@ -4484,7 +4485,7 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         for (qi = 0; qi < fx->event_count; qi++) {
             pfx_event_t *ev = &fx->events[qi];
             uint8_t st = ev->msg[0] & 0xF0;
-            if (ev->flags & PFX_EV_BYPASS_SWING) { fx->events[k++] = *ev; continue; }
+            if (ev->flags & (PFX_EV_BYPASS_SWING | PFX_EV_HELD)) { fx->events[k++] = *ev; continue; }   /* HELD: its note's own off, after its swung on */
             /* A table groove's own note-off stays where its note-on put
              * it — flushing it would re-time it to THIS note's park and
              * resize the note it ends. Except when this note plays the same
@@ -4668,7 +4669,7 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     for (i = 0; i < an->gen_count; i++) {
         if (off_time <= now && an->on_park_at > now) {
             /* due now, its note-on still held back: its length from there */
-            pfx_q_insert(fx, an->on_park_at + gate_smp, off_s, an->gen_notes[i], 0, PFX_EV_BYPASS_SWING | PFX_EV_HELD);
+            pfx_q_insert(fx, an->on_park_at + gate_smp, off_s, an->gen_notes[i], 0, PFX_EV_HELD);
         } else if (off_time <= now) {
             pfx_send(fx, off_s, an->gen_notes[i], 0);
         } else {
@@ -4680,7 +4681,7 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
              * see a queued off — it fires from the drain). It keeps its
              * length from where its note-on sounds; a next note of the pitch
              * struck sooner brings it forward (pfx_offs_before). */
-            uint8_t fl = keep ? PFX_EV_KEEP : 0;
+            uint8_t fl = (uint8_t)((keep ? PFX_EV_KEEP : 0) | PFX_EV_OWN);
             if (an->on_park_at && ft <= an->on_park_at) { ft = an->on_park_at + gate_smp; fl |= PFX_EV_HELD; }
             pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, fl);
         }
