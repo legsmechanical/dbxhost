@@ -507,6 +507,7 @@ typedef struct { uint8_t k; uint64_t delay; } groove_early_t;
 #define PFX_EV_KEEP         0x02  /* a table groove's own note-off, timed from its note-on: a later note-on's echo flush may bring it forward, never push it back */
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
 #define PFX_EV_ECHO         0x04  /* a DELAY echo: on an Audio track its velocity is its volume */
+#define PFX_EV_WAITS        0x08  /* an echo's on whose off waits for its note's end: the one a full queue may drop then */
 
 typedef struct {
     uint64_t fire_at;

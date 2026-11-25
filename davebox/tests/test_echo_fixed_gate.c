@@ -278,6 +278,50 @@ int main(void) {
         HX_ASSERT(on == 36 && n >= 95 && n <= 97, m);
         hx_destroy(h);
     }
+    /* a full echo queue (6-note chord, 3 harmonies each, 16 repeats, Retrig
+     * off): every echo that starts ends — a waiting one starts only with a
+     * slot kept for its off, and if that off still finds no room its own
+     * queued on is dropped (or it ends at once). Default and fixed Gate,
+     * pitch feedback 0 and 5, SEQ ARP off and on: no pitch held, the arp
+     * left holding nothing. */
+    for (int k = 0; k < 8; k++) {
+        const int fixed = k & 1, pf = (k & 2) ? 5 : 0, arp = (k & 4) != 0;
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+        HX_NO_LEAD(h);
+        hx_set_param(h, "bpm", "120");
+        hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+        clip_t *cl = &inst->tracks[1].clips[0];
+        cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 64; cl->loop_start = 0;
+        for (int n = 0; n < 6; n++) clip_insert_note(cl, 0, 96, (uint8_t)(40 + 2 * n), 100);
+        clip_build_steps_from_notes(cl);
+        char v[40];
+        hx_set_param(h, "t1_c0_pfx_set", "harm_octaver 1");
+        hx_set_param(h, "t1_c0_pfx_set", "harm_interval1 3");
+        hx_set_param(h, "t1_c0_pfx_set", "harm_interval2 7");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 16");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_time 4");
+        hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
+        snprintf(v, sizeof v, "delay_pitch_fb %d", pf); hx_set_param(h, "t1_c0_pfx_set", v);
+        snprintf(v, sizeof v, "delay_gate_fb %d", fixed); hx_set_param(h, "t1_c0_pfx_set", v);
+        if (arp) { hx_set_param(h, "t1_c0_pfx_set", "seq_arp_style 1"); hx_set_param(h, "t1_c0_pfx_set", "seq_arp_rate 1"); }
+        rig_launch(h, 1, 0);
+        hx_clear_capture(h); g_seen = 0; g_an = 0;
+        rig_play(h);
+        for (int g = 0; inst->playing && rig_now(h) < 1500 && g < 4000000; g++) {
+            hx_render(h, 1);
+            drain(g_a, &g_an, rig_now(h) ? rig_now(h) - 1 : 0);
+        }
+        int held = 0;
+        for (int p = 0; p < 128; p++) held += inst->tracks[1].pfx.pitch_refcount[p] != 0;
+        const int arpheld = inst->tracks[1].pfx.arp.held_count;
+        char m[128]; snprintf(m, sizeof m, "full queue, Gate %s, pitch fb %d, arp %d: %d pitches held, arp holds %d",
+                              fixed ? "1/64" : "--", pf, arp, held, arpheld);
+        printf("  %s\n", m);
+        HX_ASSERT(held == 0 && arpheld == 0, m);
+        hx_destroy(h);
+    }
     printf("PASS: echo fixed gate\n");
     return 0;
 }

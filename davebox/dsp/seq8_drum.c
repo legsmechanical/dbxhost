@@ -267,8 +267,13 @@ static void drum_pfx_sched_delay_ons(drum_pfx_t *px, pfx_active_t *an,
                     drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
                     drum_pfx_q_insert(px, off, (uint8_t)(0x80 | an->channel), note, 0, 0);
                 }
+                an->reps[i].waits = 0;
+            } else if (px->event_count + 2 <= DRUM_PFX_MAX_EVENTS) {
+                /* its off waits for the hit's end: keep a slot free for it */
+                drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, PFX_EV_WAITS);
+                an->reps[i].waits = 1;
             } else {
-                drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
+                an->reps[i].waits = 0;          /* neither: no echo, no off */
             }
         }
         cur_delay *= (1.0 + px->fb_clock / 100.0);
@@ -291,6 +296,23 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
                    (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
         /* never before its own on, as queued (see pfx_sched_delay_offs) */
         if (off <= an->reps[i].fire_at) off = an->reps[i].fire_at + (uint64_t)(rg + 0.5);
+        if (!an->reps[i].waits) continue;              /* its on never went out */
+        if (px->event_count >= DRUM_PFX_MAX_EVENTS) {
+            /* no room for its off: drop its on if still queued, else end it
+             * now (see pfx_sched_delay_offs) */
+            int e, gone = 0;
+            for (e = 0; e < px->event_count && !gone; e++) {
+                pfx_event_t *ev = &px->events[e];
+                if ((ev->flags & PFX_EV_WAITS) && (ev->msg[0] & 0xF0) == 0x90 && ev->msg[1] == note
+                    && ev->fire_at == an->reps[i].fire_at) {
+                    memmove(ev, ev + 1, (size_t)(px->event_count - e - 1) * sizeof *ev);
+                    px->event_count--;
+                    gone = 1;
+                }
+            }
+            if (!gone) drum_pfx_send(px, off_s, note, 0);
+            continue;
+        }
         drum_pfx_q_insert(px, off, off_s, note, 0, 0);
     }
 }
@@ -337,8 +359,12 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
 
     int v = clamp_i((int)vel + px->velocity_offset, 1, 127);
 
-    if (an->active)
+    if (an->active) {
         drum_pfx_send(px, (uint8_t)(0x80 | an->channel), an->gen_notes[0], 0);
+        /* ...and its echoes' offs, as a note-off would: the record is
+         * overwritten below (see the melodic retrigger guard in pfx_note_on) */
+        drum_pfx_sched_delay_offs(px, an, an->on_time, drum_pfx_gate_smp(inst, px));
+    }
 
     /* Delay retrig (drum): drop in-flight echoes from prior hit, mirroring the
      * melodic path in pfx_note_on. */

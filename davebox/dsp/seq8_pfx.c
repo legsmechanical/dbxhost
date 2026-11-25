@@ -262,9 +262,12 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
             int note = clamp_i((int)an->gen_notes[j] + an->reps[i].pitch_offset, 0, 127);
             const int pair = fixed && !pfx_echo_waits(fx, an, note);
             an->reps[i].qpitch[j] = (uint8_t)note;
-            if (pair && fx->event_count + 2 > MAX_PFX_EVENTS) continue;   /* neither: nothing waits */
+            /* both or neither: a pair needs two slots now; a waiting echo
+             * needs one now and keeps one free for its off (a dropped off
+             * would leave it ringing) */
+            if (fx->event_count + 2 > MAX_PFX_EVENTS) continue;   /* neither: nothing waits */
             if (!pair) an->reps[i].waits |= (uint8_t)(1u << j);
-            pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, PFX_EV_ECHO);
+            pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, pair ? PFX_EV_ECHO : PFX_EV_ECHO | PFX_EV_WAITS);
             if (pair) pfx_q_insert(fx, off, (uint8_t)(0x80 | an->channel), (uint8_t)note, 0, 0);
         }
 
@@ -296,6 +299,23 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
         int j;
         for (j = 0; j < an->reps[i].qn; j++) {          /* the pitches it went out on */
             if (!(an->reps[i].waits & (1u << j))) continue;   /* its off went with its on */
+            if (fx->event_count >= MAX_PFX_EVENTS) {
+                /* no room for its off: drop its on if still queued, else
+                 * end it now — never an echo with no end */
+                const uint8_t q = an->reps[i].qpitch[j];
+                int e, gone = 0;
+                for (e = 0; e < fx->event_count && !gone; e++) {
+                    pfx_event_t *ev = &fx->events[e];
+                    if ((ev->flags & PFX_EV_WAITS) && (ev->msg[0] & 0xF0) == 0x90 && ev->msg[1] == q
+                        && ev->fire_at == an->reps[i].fire_at) {   /* this echo's own, not another note's */
+                        memmove(ev, ev + 1, (size_t)(fx->event_count - e - 1) * sizeof *ev);
+                        fx->event_count--;
+                        gone = 1;
+                    }
+                }
+                if (!gone) pfx_send(fx, off_s, q, 0);
+                continue;
+            }
             pfx_q_insert(fx, off, off_s, an->reps[i].qpitch[j], 0, 0);
         }
     }
