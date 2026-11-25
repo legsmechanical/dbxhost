@@ -393,6 +393,13 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         for (qi = 0; qi < no; qi++) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
     }
 
+    /* an off of the lane's note still queued past where this hit sounds
+     * comes forward, ahead of it (see pfx_note_on) */
+    {
+        const uint64_t sounds = now + ((inst->emit_bypass_swing || inst->in_queue_drain) ? 0 : groove_park_now(inst, (int)px->track_idx));
+        if (pfx_offs_before(px->events, &px->event_count, ch, pitch, sounds) && sounds <= now && !inst->in_queue_drain)
+            drum_pfx_q_fire(px, now);   /* never inside a drain: it would re-enter it */
+    }
     memset(an, 0, sizeof(pfx_active_t));
     an->active        = 1;
     an->channel       = ch;
@@ -404,6 +411,16 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
 
     double sp = drum_pfx_spc(inst, px);
     drum_pfx_send(px, (uint8_t)(0x90 | ch), pitch, (uint8_t)v);
+    /* held back by swing or a groove slot: its own parked note-on (see
+     * pfx_note_on) */
+    if (!inst->emit_bypass_swing && !inst->in_queue_drain) {
+        const uint64_t want = now + groove_park_now(inst, (int)px->track_idx);
+        int e;
+        for (e = 0; want > now && e < px->event_count; e++)
+            if ((px->events[e].flags & PFX_EV_BYPASS_SWING) && px->events[e].msg[0] == (uint8_t)(0x90 | ch)
+                    && px->events[e].msg[1] == pitch && px->events[e].msg[2] > 0 && px->events[e].fire_at == want)
+                an->on_park_at = want;
+    }
     drum_pfx_sched_delay_ons(px, an, now, sp);
 }
 
@@ -425,10 +442,19 @@ static void drum_pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     uint64_t held = inst->swing_step_delay;
     uint8_t  held_x = inst->park_explicit;
     if (keep) { inst->swing_step_delay = an->on_delay; inst->park_explicit = 1; }
-    if (off_time <= now)
+    /* Its note-on still held back by swing (or a groove slot): a queued off
+     * fires from the drain, past drum_pfx_send's guard, and a short hit late
+     * in a swung step went out off-first and rang on. It keeps its length
+     * from where the hit sounds; the lane's next hit sooner brings it forward
+     * (pfx_offs_before, in drum_pfx_note_on). */
+    const uint64_t parked = an->on_park_at;
+    const uint64_t due = off_time + (keep ? an->on_delay : 0);
+    if (parked > now && (off_time <= now || due <= parked))   /* its length from where it sounds */
+        drum_pfx_q_insert(px, parked + gate_smp, off_s, an->gen_notes[0], 0, PFX_EV_BYPASS_SWING | PFX_EV_HELD);
+    else if (off_time <= now)
         drum_pfx_send(px, off_s, an->gen_notes[0], 0);
     else
-        drum_pfx_q_insert(px, off_time + (keep ? an->on_delay : 0), off_s, an->gen_notes[0], 0, keep ? PFX_EV_KEEP : 0);
+        drum_pfx_q_insert(px, due, off_s, an->gen_notes[0], 0, keep ? PFX_EV_KEEP : 0);
     inst->swing_step_delay = held; inst->park_explicit = held_x;
 
     drum_pfx_sched_delay_offs(px, an, an->on_time, gate_smp);

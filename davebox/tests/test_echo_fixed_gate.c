@@ -197,7 +197,7 @@ int main(void) {
                 /* echoes only: a 6-tick note swung across into an unswung
                  * step can end before it starts — the sequencer's own swing,
                  * not the delay's (a matter of its own) */
-                if (stuck_but(fx ? -1 : 40)) { bad++; if (getenv("EFG_DUMP")) { printf("    at %u:", at); for (int i = 0; i < g_an; i++) if (g_a[i].kind == 0 || g_a[i].kind == 3) printf(" %s%u@%u", g_a[i].kind ? "off" : "ON", g_a[i].a, g_a[i].tick); printf("\n"); } }
+                if (stuck()) { bad++; if (getenv("EFG_DUMP")) { printf("    at %u:", at); for (int i = 0; i < g_an; i++) if (g_a[i].kind == 0 || g_a[i].kind == 3) printf(" %s%u@%u", g_a[i].kind ? "off" : "ON", g_a[i].a, g_a[i].tick); printf("\n"); } }
                 hx_destroy(h);
             }
             char m[112]; snprintf(m, sizeof m, "swing 80%% at %s bpm, Gate %s: %d of 32 placements left a note sounding", bpms[b], fx ? "1/64" : "--", bad);

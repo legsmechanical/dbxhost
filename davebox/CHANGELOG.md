@@ -26,6 +26,9 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **Short notes under swing no longer hang**: a short note late in a swung step could end before
+  it started and ring on. It now plays its length from where swing puts it, up to the next note
+  of the same pitch. Melodic and drum tracks.
 - **No more stuck delay echoes**: echoes could hang on with swing (at some tempos), after a
   Conductor "Now" retrigger, or when a lot of echoes were in flight at once.
 - **DELAY's Gate is honoured**: with a fixed Gate set, an echo is that long. Before, every echo

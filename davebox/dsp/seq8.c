@@ -507,6 +507,7 @@ typedef struct { uint8_t k; uint64_t delay; } groove_early_t;
 #define PFX_EV_KEEP         0x02  /* a table groove's own note-off, timed from its note-on: a later note-on's echo flush may bring it forward, never push it back */
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
 #define PFX_EV_ECHO         0x04  /* a DELAY echo: on an Audio track its velocity is its volume */
+#define PFX_EV_HELD         0x10  /* a note-off moved past its note's swung note-on (its length kept): a next note of the pitch brings it forward */
 #define PFX_EV_WAITS        0x08  /* an echo's on whose off waits for its note's end: the one a full queue may drop then */
 
 typedef struct {
@@ -520,6 +521,7 @@ typedef struct {
     uint8_t  channel;
     uint64_t on_time;
     uint64_t on_delay;          /* table groove: how long the note-on was parked; its note-off waits the same */
+    uint64_t on_park_at;        /* when its note-on, held back by swing or a groove slot, sounds (0 = not held): its note-off never goes before it */
     uint64_t gate_override_smp; /* sequenced note: Len-aware gate in samples; 0 = use pfx_gate_smp() */
     uint8_t  orig_velocity;
     uint8_t  gen_notes[MAX_GEN_NOTES];
@@ -4347,6 +4349,31 @@ static void pfx_reset(play_fx_t *fx) {
  * live pad, external MIDI) flow through this function the same way; if
  * arp.on, the chain's emissions get captured into the arp's held buffer
  * and the arp re-emits the picked note via pfx_send with arp_emitting=1. */
+/* A note of `pitch` sounds at `at`: an off a note before it was given past
+ * its swung note-on (PFX_EV_HELD: its length kept from where swing let it
+ * sound) and still queued past `at` comes forward to `at`, ahead of the new
+ * note-on — it must not cut the new note short. Only those: an echo's off
+ * moved before its own on would leave the echo ringing. Returns how many
+ * moved: when the new note sounds now, the caller fires the queue first, so
+ * a moved off due now goes out ahead of it. */
+static int pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, uint64_t at) {
+    int i, moved = 0;
+    for (i = 0; i < *n; i++) {
+        if (!(ev[i].flags & PFX_EV_HELD) || ev[i].msg[0] != (uint8_t)(0x80 | ch) || ev[i].msg[1] != pitch || ev[i].fire_at <= at) continue;
+        pfx_event_t e = ev[i];
+        memmove(&ev[i], &ev[i + 1], (size_t)(*n - i - 1) * sizeof *ev);
+        (*n)--;
+        int lo = 0, hi = *n;                      /* back in, at `at`, after equal times */
+        while (lo < hi) { int mid = (lo + hi) >> 1; if (ev[mid].fire_at <= at) lo = mid + 1; else hi = mid; }
+        memmove(&ev[lo + 1], &ev[lo], (size_t)(*n - lo) * sizeof *ev);
+        e.fire_at = at;
+        ev[lo] = e;
+        (*n)++;                                   /* lo <= i: those shifted were seen; go on from i + 1 */
+        moved++;
+    }
+    return moved;
+}
+
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                         uint8_t orig_note, uint8_t vel) {
     /* A Slicer has no velocity (Josh, 2026-11-02: "no velocity modulation"):
@@ -4493,10 +4520,25 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     double sp    = pfx_spc(inst, tr);
     uint8_t on_s = (uint8_t)(0x90 | ch);
 
-    /* Immediate note-ons. */
+    /* Immediate note-ons — after any off of the pitch still queued past
+     * where this one sounds is brought forward (pfx_offs_before). */
     int i;
+    {
+        const uint64_t sounds = now + ((inst->emit_bypass_swing || inst->in_queue_drain) ? 0
+                                       : groove_park_now(inst, (int)fx->track_idx));
+        int moved = 0;
+        for (i = 0; i < gc; i++) moved += pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
+        if (moved && sounds <= now && !inst->in_queue_drain) pfx_q_fire(fx, now);   /* never inside a drain: it would re-enter it */
+    }
     for (i = 0; i < gc; i++)
         pfx_send(fx, on_s, gen[i], (uint8_t)v);
+    /* held back by swing or a groove slot? Its own parked note-on — the one
+     * just queued, at now + the park — not another note's of the pitch */
+    if (gc > 0 && g_inst && !inst->emit_bypass_swing && !inst->in_queue_drain) {
+        const uint64_t want = now + groove_park_now(inst, (int)fx->track_idx);
+        const uint64_t at = pfx_parked_on_at(fx->events, fx->event_count, ch, gen[0]);
+        if (want > now && at == want) an->on_park_at = at;
+    }
 
     /* Delay repeats (note-ons only; note-offs scheduled at note-off time). */
     pfx_sched_delay_ons(inst, is_scale_aware, fx, an, now, sp);
@@ -4613,12 +4655,23 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     if (keep) { g_inst->swing_step_delay = an->on_delay; g_inst->park_explicit = 1; }
     int i;
     for (i = 0; i < an->gen_count; i++) {
-        if (off_time <= now) {
+        if (off_time <= now && an->on_park_at > now) {
+            /* due now, its note-on still held back: its length from there */
+            pfx_q_insert(fx, an->on_park_at + gate_smp, off_s, an->gen_notes[i], 0, PFX_EV_BYPASS_SWING | PFX_EV_HELD);
+        } else if (off_time <= now) {
             pfx_send(fx, off_s, an->gen_notes[i], 0);
         } else {
             uint64_t ft = off_time + (keep ? an->on_delay
                                       : swing_offset_for_fire_at(g_inst, (int)fx->track_idx, now, off_time));
-            pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, keep ? PFX_EV_KEEP : 0);
+            /* Never before its own note-on, still held back by swing: a short
+             * note late in a swung step whose off lands in the next, on-time
+             * one went out off-first and rang on (pfx_send's guard does not
+             * see a queued off — it fires from the drain). It keeps its
+             * length from where its note-on sounds; a next note of the pitch
+             * struck sooner brings it forward (pfx_offs_before). */
+            uint8_t fl = keep ? PFX_EV_KEEP : 0;
+            if (an->on_park_at && ft <= an->on_park_at) { ft = an->on_park_at + gate_smp; fl |= PFX_EV_HELD; }
+            pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, fl);
         }
     }
     if (keep) { g_inst->swing_step_delay = held; g_inst->park_explicit = held_x; }
