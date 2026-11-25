@@ -7,6 +7,7 @@
  *   D6  gate_time==0 echoes bake as instant-off (1 tick), not 100% gate —
  *       now only where playback has no note gate (drum lanes, POST)
  *   D7  a sequenced note's echoes are as long as the note (as playback)
+ *   D8  an echo on the next note's tick drops (Retrig)
  * Sequential hx instances only — the stub host is process-global. */
 #include "harness.h"
 
@@ -135,6 +136,31 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- D8: an echo due on the very tick of the next note drops (Retrig
+     * on), as playback mostly does: 40@0+12, 60@24+12, delay 24 ticks, pitch
+     * feedback +3 -> no 43 at tick 24; 60's own echo 63 at 48 stays. */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+    hx_set_param(h, "t1_c0_step_1_toggle", "60 100");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        for (int i = 0; i < cl->note_count; i++) cl->notes[i].gate = 12;
+        clip_build_steps_from_notes(cl);
+    }
+    hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 1");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_time 5");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 3");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 1");
+    hx_set_param(h, "bake", "1 0 0 1 0 1");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        HX_ASSERT(!has_pitch(cl, 43), "D8: the echo on the next note's tick must drop");
+        HX_ASSERT(has_pitch(cl, 63), "D8 control: the second note's echo is there");
+    }
+    hx_destroy(h);
+
     /* ---- A3: a phrase starts as playback starts it (arp_tick): Sync off
      * fires on the note (ruled 2026-11-21), Sync on waits for the rate
      * boundary; either way the Arp Steps column re-anchors there. A note at
@@ -186,6 +212,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, A3 phrase start)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, A3 phrase start)\n");
     return 0;
 }
