@@ -259,6 +259,25 @@ int main(void) {
         HX_ASSERT(held == 0, m);
         hx_destroy(h);
     }
+    /* a paired echo gets ONE off: 40@0 held 48, its echo 45 at 24 (Gate
+     * 1/64, its off queued with it); a later note 45@36 held 96 must not be
+     * cut when 40 ends at 48 by a second off for the echo */
+    {
+        static const char *const set[] = { "delay_repeats 1", "delay_time 5", "delay_pitch_fb 5", NULL };
+        hx_t *h = one(0, 48, set);
+        seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+        clip_t *cl = &inst->tracks[1].clips[0];
+        clip_insert_note(cl, 36, 96, 45, 100);
+        clip_build_steps_from_notes(cl);
+        rig_launch(h, 1, 0);
+        play(h, 16, g_a, &g_an);
+        uint32_t on = 0;
+        const int n = len_of(45, 30, &on);
+        char m[96]; snprintf(m, sizeof m, "the note 45 at %u lasts %d ticks (want 96: no second off)", on, n);
+        printf("  %s\n", m);
+        HX_ASSERT(on == 36 && n >= 95 && n <= 97, m);
+        hx_destroy(h);
+    }
     printf("PASS: echo fixed gate\n");
     return 0;
 }

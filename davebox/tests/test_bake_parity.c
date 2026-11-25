@@ -8,6 +8,7 @@
  *       now only where playback has no note gate (drum lanes, POST)
  *   D7  a sequenced note's echoes are as long as the note (as playback)
  *   D8  an echo on the next note's tick drops (Retrig)
+ *   D9  under SEQ ARP a fixed-Gate echo rings to its note's end
  * Sequential hx instances only — the stub host is process-global. */
 #include "harness.h"
 
@@ -161,6 +162,36 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- D9: under SEQ ARP a fixed-Gate echo waits for its note's end, as
+     * playback's does (the arp holds notes by pitch): 40@0 held 96 ticks, its
+     * echo 45 at 24 with Gate 1/64 stays in the arp till 96 — baked, the arp
+     * still plays 45 after the echo's own 6 ticks. */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        cl->notes[0].gate = 96;
+        clip_build_steps_from_notes(cl);
+    }
+    hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 1");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_time 5");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 5");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_gate_fb 1");
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_style 1");
+    hx_set_param(h, "t1_c0_pfx_set", "seq_arp_rate 0");
+    hx_set_param(h, "bake", "1 0 0 1 0 0");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        int late = 0;
+        for (int i = 0; i < cl->note_count; i++) late += cl->notes[i].active && cl->notes[i].pitch == 45 && cl->notes[i].tick > 36 && cl->notes[i].tick < 96;
+        char m[96]; snprintf(m, sizeof m, "D9: the arp plays 45 %d times after its echo's own Gate (want some)", late);
+        HX_ASSERT(late > 0, m);
+    }
+    hx_destroy(h);
+
     /* ---- A3: a phrase starts as playback starts it (arp_tick): Sync off
      * fires on the note (ruled 2026-11-21), Sync on waits for the rate
      * boundary; either way the Arp Steps column re-anchors there. A note at
@@ -212,6 +243,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, A3 phrase start)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, D9 arp echo, A3 phrase start)\n");
     return 0;
 }
