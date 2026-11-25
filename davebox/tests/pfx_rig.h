@@ -11,6 +11,11 @@ typedef struct { uint32_t tick; uint8_t kind, a, b; } ev_t;   /* kind 0 on, 1 CC
 static ev_t g_a[EV_MAX], g_b[EV_MAX];
 static int g_an, g_bn, g_seen;
 
+/* a drum clip's lane (main keeps all 32 in the clip) */
+#define RIG_LANE(dc, l) (&(dc)->lanes[l])
+static uint32_t rs;
+static uint32_t rnd(uint32_t n) { rs = rs * 1664525u + 1013904223u; return n ? (rs >> 8) % n : 0; }
+
 static uint32_t rig_now(hx_t *h) {
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     return inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;

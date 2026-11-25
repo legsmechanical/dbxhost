@@ -26,6 +26,9 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **Baked echoes sound as they play**: on a melodic track, a baked MIDI delay echo is now as long
+  as the note it echoes (it was always short), and with Retrig on a new note cuts the echoes still
+  ringing, as it does live.
 - **Baked SEQ ARP starts where it plays**: a baked arpeggio now starts on its first note with Sync
   off (and on the next beat of its rate with Sync on), and its Arp Steps pattern starts there too, as
   it does when it plays. It used to wait for a rate boundary and keep the clip's own step count.

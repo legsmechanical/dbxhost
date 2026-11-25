@@ -23,7 +23,7 @@ typedef struct {
 
 #define BAKE_BUF  MAX_NOTES_PER_CLIP
 
-static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware,
+static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_gate,
                                 play_fx_t *fx, uint32_t clip_ticks,
                                 uint32_t max_echo_tick,
                                 const bake_note_t *in, int in_count,
@@ -59,7 +59,11 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware,
         for (rep = 0; rep < fx->repeat_times && oc < out_max; rep++) {
             cumul += cur_delay;
             uint32_t echo_tick = in[ni].tick + (uint32_t)(cumul + 0.5);
-            if (echo_tick >= echo_limit) break;
+            /* an echo due on the very tick of the next note still plays:
+             * playback fires the queue before that note's Retrig drains it
+             * (mostly — by a sample it can go either way) */
+            if (note_gate && fx->delay_retrig ? echo_tick > echo_limit || echo_tick >= max_echo_tick
+                                              : echo_tick >= echo_limit) break;
             if (fx->fb_note_random > 0) {
                 int rng = fx->fb_note_random;
                 int lim = rng;
@@ -106,15 +110,40 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware,
             }
             if (rep > 0) rep_vel += fx->fb_velocity;
             rep_vel = clamp_i(rep_vel, 1, 127);
-            /* Echo gate: fb_gate_time>0 → fixed gate; else the live default echo
-             * gate (pfx_gate_smp = GATE_TICKS * gate_time%), NOT the source note's
-             * gate. Live delay-offs use gate_smp, so source-gate echoes baked far
-             * too long — sustained instead of the staccato you hear (only exposed
-             * once same-pitch legalization can't mask it, e.g. random-pitch delay). */
+            /* Echo gate, as playback sends it (pfx_sched_delay_offs): a fixed
+             * Gate (fb_gate_time>0) when set; else a SEQUENCED melodic note's
+             * echo is as long as the note itself (render sets the note's own
+             * gate, pfx_set_gate_override, ruled 2026-11-25: baked sounds like
+             * live); else — drum lanes, POST's returning notes — the track's
+             * default gate, GATE_TICKS * gate_time% (0 = instant off live; 1
+             * tick is the closest bakeable). */
             uint32_t eg = fx->fb_gate_time > 0
                 ? (uint32_t)GATE_FIXED_TICKS[fx->fb_gate_time - 1]
+                : note_gate ? (uint32_t)in[ni].gate
                 : fx->gate_time > 0 ? (uint32_t)((GATE_TICKS * fx->gate_time) / 100)
-                : 1;   /* live pfx_gate_smp(0) = instant off; 1 tick is the closest bakeable */
+                : 1;
+            /* Retrig also CUTS an echo already sounding: playback queues an
+             * echo's note-off when the note it echoes ends, and the next note
+             * after that drains the queue — sending those offs at once. So the
+             * echo ends at the first onset that is past both its start and its
+             * note's end (wrapping to the next pass, as the loop plays).
+             * Melodic only, like the two rules above: a drum lane's echoes
+             * repeat its hit's own pitch and are an open question of their
+             * own (checked against playback: tests/test_bake_echo_live.c). */
+            if (note_gate && fx->delay_retrig) {
+                const uint32_t src_end = in[ni].tick + in[ni].gate;
+                uint32_t cut = UINT32_MAX;
+                int j;
+                for (j = 0; j < in_count; j++) {
+                    uint32_t tj = in[j].tick;
+                    while (tj <= echo_tick || tj < src_end) {
+                        if (!clip_ticks) { tj = UINT32_MAX; break; }
+                        tj += clip_ticks;
+                    }
+                    if (tj < cut) cut = tj;
+                }
+                if (cut != UINT32_MAX && cut - echo_tick < eg) eg = cut - echo_tick;
+            }
             if (eg < 1) eg = 1; if (eg > 65535u) eg = 65535u;
             out[oc++] = (bake_note_t){ echo_tick, (uint16_t)eg,
                                        (uint8_t)echo_pitch, (uint8_t)rep_vel,
@@ -438,7 +467,7 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
                 /* Wrapped cycle: generate all echoes (UINT32_MAX), fold mod cycle
                  * below → steady-state. Open cycle: stop echoes at cycle_ticks → clean
                  * first pass (tail cut by the loop brace anyway). */
-                out_count = bake_stage_midi_dly(inst, scale_aware, &fx, cycle_ticks,
+                out_count = bake_stage_midi_dly(inst, scale_aware, 1, &fx, cycle_ticks,
                                                 wrapped ? UINT32_MAX : cycle_ticks,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
@@ -795,7 +824,7 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
         for (si = 0; si < 2; si++) {
             int out_count;
             if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
-                out_count = bake_stage_midi_dly(inst, scale_aware, &fx, cycle_ticks,
+                out_count = bake_stage_midi_dly(inst, scale_aware, 1, &fx, cycle_ticks,
                                                 (wrap && loop == effectiveLoops - 1) ? UINT32_MAX
                                                     : (uint32_t)(effectiveLoops - loop) * cycle_ticks,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
@@ -977,7 +1006,7 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
             for (si = 0; si < 2; si++) {
                 int out_count;
                 if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
-                    out_count = bake_stage_midi_dly(inst, scale_aware, &fx, cycle_ticks,
+                    out_count = bake_stage_midi_dly(inst, scale_aware, 0, &fx, cycle_ticks,
                                                     (wrap && loop == loops - 1) ? UINT32_MAX
                                                         : (uint32_t)(loops - loop) * cycle_ticks,
                                                     in_buf, in_count, out_buf, BAKE_BUF);
@@ -1205,7 +1234,7 @@ static int render_drum_lane_nd(seq8_instance_t *inst, int t, int c, int lane,
         for (si = 0; si < 2; si++) {
             int out_count;
             if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
-                out_count = bake_stage_midi_dly(inst, scale_aware, &fx, cycle_ticks,
+                out_count = bake_stage_midi_dly(inst, scale_aware, 0, &fx, cycle_ticks,
                                                 wrapped ? UINT32_MAX : cycle_ticks,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
@@ -1380,7 +1409,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
             for (si = 0; si < 2; si++) {
                 int out_count;
                 if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
-                    out_count = bake_stage_midi_dly(inst, scale_aware, &fx, cycle_ticks,
+                    out_count = bake_stage_midi_dly(inst, scale_aware, 0, &fx, cycle_ticks,
                                                     (wrap && loop == lane_loops - 1) ? UINT32_MAX
                                                         : (uint32_t)(lane_loops - loop) * cycle_ticks,
                                                     in_buf, in_count, out_buf, BAKE_BUF);

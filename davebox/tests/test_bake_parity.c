@@ -4,7 +4,9 @@
  *   D3  CC-automation lane cadence pinned on loop-unroll bake
  *   D5  scale-aware delay feedback: degree delta from the group PRIMARY,
  *       applied to harmony copies (was per-note re-transpose)
- *   D6  gate_time==0 echoes bake as instant-off (1 tick), not 100% gate
+ *   D6  gate_time==0 echoes bake as instant-off (1 tick), not 100% gate —
+ *       now only where playback has no note gate (drum lanes, POST)
+ *   D7  a sequenced note's echoes are as long as the note (as playback)
  * Sequential hx instances only — the stub host is process-global. */
 #include "harness.h"
 
@@ -103,9 +105,9 @@ int main(void) {
      * C major, primary 60 (C), HARMZ +2 degrees -> copy 64 (E), fb_note +1
      * degree. Live: delta = st(60,+1)-60 = +2 semitones applied to BOTH
      * copies -> echoes 62 and 66. Old bake re-transposed the copy itself:
-     * st(64,+1) = 65 — must NOT appear. Echoes take the GATE-derived gate
-     * (GATE_TICKS * gate%/100 = 12 at default 100%), never the source
-     * note's gate (source held 192 ticks here). */
+     * st(64,+1) = 65 — must NOT appear. D7: echoes are as long as the note
+     * they echo (192 ticks here), as playback sends them — not the track's
+     * default gate (GATE_TICKS * gate%/100 = 12). */
     h = hx_create(NULL);
     inst = (seq8_instance_t *)h->inst;
     inst->scale_aware = 1; inst->pad_key = 0; inst->pad_scale = 0;
@@ -125,7 +127,7 @@ int main(void) {
         int found_echo = 0;
         for (int i = 0; i < cl->note_count; i++) {
             if (cl->notes[i].tick > 0) {
-                HX_ASSERT(cl->notes[i].gate == 12, "echo gate must be gate-derived (12), not source gate");
+                HX_ASSERT(cl->notes[i].gate == 192, "D7: an echo must be as long as its note (192)");
                 found_echo = 1;
             }
         }
@@ -184,6 +186,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D6 zero-gate, A3 phrase start)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, A3 phrase start)\n");
     return 0;
 }
