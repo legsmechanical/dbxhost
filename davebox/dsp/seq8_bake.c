@@ -143,7 +143,17 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
                 /* the note ends at its gate, or sooner where it strikes again
                  * (playback ends it there: its next pass, or the same key) */
                 uint32_t src_end = in[ni].tick + in[ni].gate;
-                if (fx->fb_gate_time > 0) src_end = 0;   /* a fixed Gate's off is queued with its on */
+                /* a fixed Gate's off is queued with its on — unless the echo
+                 * is on a pitch its note sounds: that one waits for the note's
+                 * end, as every echo did (pfx_echo_waits); how long it rings on
+                 * a pitch its note holds is the open same-pitch question */
+                int waits = 0;
+                if (fx->fb_gate_time > 0) {
+                    int k;
+                    for (k = 0; k < in_count && !waits; k++)
+                        waits = in[k].tick == in[ni].tick && in[k].prim == in[ni].prim && in[k].pitch == echo_pitch;
+                }
+                if (fx->fb_gate_time > 0 && !waits) src_end = 0;
                 else {
                     int j;
                     for (j = 0; j < in_count; j++) {

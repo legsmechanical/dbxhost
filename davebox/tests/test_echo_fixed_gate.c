@@ -57,6 +57,40 @@ static int len_of(uint8_t p, uint32_t from, uint32_t *on) {
     return -2;
 }
 
+
+/* a melodic clip of one note, fixed echo Gate 1/64, for the review cases */
+static hx_t *one(uint32_t at, uint16_t gate, const char *const *set) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    HX_NO_LEAD(h);
+    hx_set_param(h, "bpm", "120");
+    hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+    clip_t *cl = &inst->tracks[1].clips[0];
+    cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 16; cl->loop_start = 0;
+    clip_insert_note(cl, at, gate, 40, 100);
+    clip_build_steps_from_notes(cl);
+    hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_gate_fb 1");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
+    /* "!key", "value" sets a global; anything else is a clip effect */
+    for (; *set; set++) {
+        if ((*set)[0] == '!') { hx_set_param(h, *set + 1, set[1]); set++; }
+        else hx_set_param(h, "t1_c0_pfx_set", *set);
+    }
+    rig_launch(h, 1, 0);
+    return h;
+}
+/* no pitch left sounding, no off before its on */
+static int stuck(void) {
+    int cnt[128] = { 0 }, bad = 0;
+    for (int i = 0; i < g_an; i++) {
+        if (g_a[i].kind == 0) cnt[g_a[i].a]++;
+        else if (g_a[i].kind == 3 && cnt[g_a[i].a] > 0) cnt[g_a[i].a]--;
+    }
+    for (int p = 0; p < 128; p++) bad += cnt[p] != 0;
+    return bad;
+}
+
 int main(void) {
     /* melodic: echoes at 24 (45) and 48 (50), the note held to 96 */
     for (int fixed = 0; fixed <= 1; fixed++) {
@@ -83,6 +117,34 @@ int main(void) {
         snprintf(m, sizeof m, "drum, Gate 1/64: the echo at %u is %d ticks long (want 6)", on, b);
         printf("  %s\n", m);
         HX_ASSERT(on >= 47 && on <= 49 && b >= 5 && b <= 7, m);
+        hx_destroy(h);
+    }
+    /* swing at full: an echo late in an off-beat step with a Gate shorter
+     * than the swing delay — its off is timed from its own swung on, so it
+     * never goes out first (a held note and a short one) */
+    for (int g = 0; g < 2; g++) {
+        static const char *const set[] = { "delay_repeats 2", "delay_time 7", "delay_pitch_fb 5",
+                                           "!groove_kind", "1", "!groove_amt", "100", NULL };
+        hx_t *h = one(58, g ? 6 : 96, set);
+        play(h, 16, g_a, &g_an);
+        const int n = stuck();
+        char m[96]; snprintf(m, sizeof m, "swing, note %s: %d pitches left sounding", g ? "short" : "held", n);
+        printf("  %s\n", m);
+        HX_ASSERT(n == 0, m);
+        hx_destroy(h);
+    }
+    /* SEQ ARP over a held note whose echoes are on its own pitch: the echo
+     * waits for the note's end, so the arp keeps the note and plays on */
+    {
+        static const char *const set[] = { "delay_repeats 2", "delay_time 5", "delay_pitch_fb 0",
+                                           "seq_arp_style 1", "seq_arp_rate 1", NULL };
+        hx_t *h = one(0, 192, set);
+        play(h, 16, g_a, &g_an);
+        uint32_t last = 0;
+        for (int i = 0; i < g_an; i++) if (!g_a[i].kind && g_a[i].tick < 192 && g_a[i].tick > last) last = g_a[i].tick;
+        char m[96]; snprintf(m, sizeof m, "SEQ ARP over a held note: last arp note at %u (want past 150)", last);
+        printf("  %s\n", m);
+        HX_ASSERT(last > 150, m);
         hx_destroy(h);
     }
     printf("PASS: echo fixed gate\n");

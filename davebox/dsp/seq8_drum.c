@@ -261,10 +261,7 @@ static void drum_pfx_sched_delay_ons(drum_pfx_t *px, pfx_active_t *an,
             if (an->reps[i].gate_factor < 0.0) {
                 double rg = -an->reps[i].gate_factor;
                 if (rg < 1.0) rg = 1.0;
-                uint64_t on_t = base_time + an->reps[i].cumul_delay;
-                uint64_t off  = on_t + (uint64_t)(rg + 0.5);
-                off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter,
-                           (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+                uint64_t off  = ft + (uint64_t)(rg + 0.5);   /* from its own swung on: never first */
                 if (px->event_count + 2 <= DRUM_PFX_MAX_EVENTS) {
                     drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
                     drum_pfx_q_insert(px, off, (uint8_t)(0x80 | an->channel), note, 0, 0);
@@ -291,6 +288,10 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
         uint64_t off  = on_t + (uint64_t)(rg + 0.5);
         off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter,
                    (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+        {   /* never before its own swung on (see pfx_sched_delay_offs) */
+            const uint64_t on_sw = on_t + swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter, on_t);
+            if (off <= on_sw) off = on_sw + (uint64_t)(rg + 0.5);   /* its own length, from there */
+        }
         drum_pfx_q_insert(px, off, off_s, note, 0, 0);
     }
 }

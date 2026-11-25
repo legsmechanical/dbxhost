@@ -139,6 +139,15 @@ static int pfx_build_gen_notes(seq8_instance_t *inst, int scale_aware,
 /* Delay repeat scheduling (direct port from NoteTwist)                */
 /* ------------------------------------------------------------------ */
 
+/* A fixed-Gate echo on a pitch its own note sounds (pitch feedback 0, a
+ * harmony copy's pitch, any Audio echo) waits for the note's end to send its
+ * off, as every echo did before: see pfx_sched_delay_ons. */
+static int pfx_echo_waits(const pfx_active_t *an, int note) {
+    int j;
+    for (j = 0; j < an->gen_count; j++) if ((int)an->gen_notes[j] == note) return 1;
+    return 0;
+}
+
 static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
                                 play_fx_t *fx, pfx_active_t *an,
                                 uint64_t base_time, double sp) {
@@ -227,22 +236,26 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
          * keep the one without the other. (It used to wait for the note it
          * echoes to end, like a note-gate echo's, so a short Gate rang until
          * the note was released — ruled a bug 2026-11-25: short means short.) */
+        /* Its off is timed from its own (swung) on, so it can never go out
+         * first. An echo on a pitch its note still holds keeps the old
+         * timing (pfx_sched_delay_offs, at the note's end): the held pitch
+         * sounds on anyway, and an early off would take that pitch out of
+         * SEQ ARP's held notes, or cut an Audio slice (an Audio echo is
+         * silent and on its note's own pitch) — pfx_echo_waits. */
         const int fixed = an->reps[i].gate_factor < 0.0;
         uint64_t off = 0;
         if (fixed) {
             double rg = -an->reps[i].gate_factor;
             if (rg < 1.0) rg = 1.0;
-            const uint64_t on_t = base_time + an->reps[i].cumul_delay;
-            off = on_t + (uint64_t)(rg + 0.5);
-            off += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter,
-                       (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+            off = ft + (uint64_t)(rg + 0.5);
         }
         int j;
         for (j = 0; j < an->gen_count; j++) {
             int note = clamp_i((int)an->gen_notes[j] + an->reps[i].pitch_offset, 0, 127);
-            if (fixed && fx->event_count + 2 > MAX_PFX_EVENTS) continue;
+            const int pair = fixed && !pfx_echo_waits(an, note);
+            if (pair && fx->event_count + 2 > MAX_PFX_EVENTS) continue;
             pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, PFX_EV_ECHO);
-            if (fixed) pfx_q_insert(fx, off, (uint8_t)(0x80 | an->channel), (uint8_t)note, 0, 0);
+            if (pair) pfx_q_insert(fx, off, (uint8_t)(0x80 | an->channel), (uint8_t)note, 0, 0);
         }
 
         cur_delay *= (1.0 + fx->fb_clock / 100.0);
@@ -257,8 +270,8 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
     uint8_t off_s = (uint8_t)(0x80 | an->channel);
     int i;
     for (i = 0; i < an->stored_repeat_count; i++) {
-        if (an->reps[i].gate_factor < 0.0) continue;   /* a fixed Gate: queued with its note-on */
-        double rg = (double)gate_smp * an->reps[i].gate_factor;
+        const int fixed = an->reps[i].gate_factor < 0.0;   /* queued with its note-on, unless it waits */
+        double rg = fixed ? -an->reps[i].gate_factor : (double)gate_smp * an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
         uint64_t on_t = base_time + an->reps[i].cumul_delay;
         uint64_t off  = on_t + (uint64_t)(rg + 0.5);
@@ -266,10 +279,17 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
          * not as late as the slot it lands in — or it could come out first */
         off += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter,
                    (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
+        /* and never before its own swung on (a short echo late in an
+         * off-beat step would land its off in the next, unswung one) */
+        {
+            const uint64_t on_sw = on_t + swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter, on_t);
+            if (off <= on_sw) off = on_sw + (uint64_t)(rg + 0.5);   /* its own length, from there */
+        }
         int j;
         for (j = 0; j < an->gen_count; j++) {
             int note = (int)an->gen_notes[j] + an->reps[i].pitch_offset;
             note = clamp_i(note, 0, 127);
+            if (fixed && !pfx_echo_waits(an, note)) continue;
             pfx_q_insert(fx, off, off_s, (uint8_t)note, 0, 0);
         }
     }
