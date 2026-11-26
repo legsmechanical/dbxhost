@@ -115,16 +115,16 @@ int main(void) {
         hx_render(h, 20);
         pfx_note_on(inst, tr, 60, 100);            /* struck again: the echo is dropped */
         hx_render(h, 400);
-        int on = 0, seen = 0;
+        int seen = 0, cut = 0;                     /* 65 is held throughout: never an off */
         for (int i = 0; i < hx_stub_event_count(); i++) {
             const hx_midi_event *e = hx_stub_event(i);
             const uint8_t st = e->bytes[1] & 0xF0;
-            if (e->bytes[2] != 65 || (st != 0x90 && st != 0x80)) continue;
-            on = st == 0x90 && e->bytes[3] > 0;
-            seen += on;
+            if (e->bytes[2] != 65) continue;
+            seen += st == 0x90 && e->bytes[3] > 0;
+            cut  += st == 0x80 || (st == 0x90 && e->bytes[3] == 0);
         }
         want(seen > 0, "control: the held 65 went out");
-        want(on, "a pitch struck again while sounding: its dropped echo leaves a held note alone");
+        want(!cut, "a pitch struck again while sounding: its dropped echo leaves a held note alone");
         hx_destroy(h);
     }
 
