@@ -47,15 +47,26 @@ static void run(int drum, const char *route, int *ons_after, int *offs_after) {
     int guard = 400000;
     while (inst->playing && rig_now(h) < 12 && guard-- > 0) { hx_render(h, 1); drain(g_a, &g_an, rig_now(h)); }
     const int before = g_an;
-    hx_set_param(h, "transport", "stop");
-    for (int i = 0; i < 400; i++) { hx_render(h, 1); drain(g_a, &g_an, 9999); }
     int on_before = 0, pitch = -1;
     for (int i = 0; i < before; i++) if (g_a[i].kind == 0) { on_before++; pitch = g_a[i].a; }
     HX_ASSERT(on_before == 1, "control: the note played before the Stop, and no echo yet");
+    const int first = hx_stub_event_count();
+    hx_set_param(h, "transport", "stop");
+    const int stop_block = first ? hx_stub_event(first - 1)->block : 0;
+    for (int i = 0; i < 400; i++) hx_render(h, 1);
+    /* Stop's sweep sends every pitch's note-off to the chain slots of all
+     * tracks, so on a Move route only what reaches Move counts, and it must
+     * come at once (the render after Stop), not at the note's end */
+    const int move = !strcmp(route, "move");
     *ons_after = *offs_after = 0;
-    for (int i = before; i < g_an; i++) {
-        *ons_after  += g_a[i].kind == 0;
-        *offs_after += g_a[i].kind == 3 && g_a[i].a == pitch;
+    for (int i = first; i < hx_stub_event_count(); i++) {
+        const hx_midi_event *e = hx_stub_event(i);
+        if (e->kind == HX_PARAM_SET) continue;
+        const uint8_t st = e->bytes[1] & 0xF0;
+        const int on = st == 0x90 && e->bytes[3] > 0, off = st == 0x80 || (st == 0x90 && !e->bytes[3]);
+        *ons_after += on;
+        if (off && e->bytes[2] == pitch && (!move || (e->kind == HX_MIDI_INJECT && e->block <= stop_block + 1)))
+            (*offs_after)++;
     }
     hx_destroy(h);
 }
