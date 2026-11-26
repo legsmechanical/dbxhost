@@ -22,6 +22,14 @@ static void arp_add_note(arp_engine_t *a, uint8_t pitch, uint8_t vel) {
     int was_empty = (a->held_count == 0);
     a->held_pitch[a->held_count] = pitch;
     a->held_vel[a->held_count]   = vel;
+    /* held_order counts up from 0 and restarts only when the arp empties; a
+     * long unbroken run (echoes feeding it) would wrap it, and Play Order
+     * would put the newest notes first. Before it can, number the held notes
+     * afresh: they sit in the buffer in the order they came. */
+    if (a->next_order == 255) {
+        for (int j = 0; j < a->held_count; j++) a->held_order[j] = (uint8_t)j;
+        a->next_order = a->held_count;
+    }
     a->held_order[a->held_count] = a->next_order++;
     a->held_refs[a->held_count]  = 1;
     a->held_count++;

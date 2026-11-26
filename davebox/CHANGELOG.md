@@ -31,6 +31,8 @@ the section into a versioned heading at release time.
   and baked. The pitch now stays until the last note holding it ends.
 - **SEQ ARP holds 32 notes (was 16)**: a big chord with harmonies gave it more than 16 pitches, and
   the rest never played. With more than 16 held, it plays fewer octave copies.
+- **SEQ ARP's Play Order keeps its order on long runs**: after a few hundred notes with the arp never
+  empty (echoes feeding it), the newest notes started playing first.
 - **SEQ ARP plays DELAY's echoes with Sync on**: most echoes fed into a synced arp went silent, and how
   many you heard changed with the tempo.
 - **Many DELAY repeats no longer hang or drop notes**: a busy pattern with lots of echoes could fill
