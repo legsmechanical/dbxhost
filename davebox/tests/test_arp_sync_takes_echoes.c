@@ -7,7 +7,7 @@
  * and the arp stays on its grid. A note 3 or more ticks past still waits. */
 #include "pfx_rig.h"
 
-static hx_t *rig(const char *bpm, uint32_t at, uint16_t gate, int delay) {
+static hx_t *rig(const char *bpm, uint32_t at, uint16_t gate, int delay, int reps, int gfb) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     HX_NO_LEAD(h);
@@ -19,7 +19,9 @@ static hx_t *rig(const char *bpm, uint32_t at, uint16_t gate, int delay) {
     clip_build_steps_from_notes(cl);
     if (delay) {
         hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
-        hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 3");
+        char v[32];
+        snprintf(v, sizeof v, "delay_repeats %d", reps); hx_set_param(h, "t1_c0_pfx_set", v);
+        snprintf(v, sizeof v, "delay_gate_fb %d", gfb);  hx_set_param(h, "t1_c0_pfx_set", v);
         hx_set_param(h, "t1_c0_pfx_set", "delay_time 5");      /* 1/16: on the arp's grid */
         hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 3");  /* 63 66 69 */
         hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
@@ -34,7 +36,7 @@ int main(void) {
     static const char *const bpms[] = { "77", "90", "100", "120", "133", "140", "174" };
     int bad = 0;
     for (int b = 0; b < 7; b++) {
-        hx_t *h = rig(bpms[b], 0, 6, 1);
+        hx_t *h = rig(bpms[b], 0, 6, 1, 3, 0);
         play(h, 16, g_a, &g_an);
         int heard = 0, off_grid = 0;
         for (int i = 0; i < g_an; i++) {
@@ -49,9 +51,27 @@ int main(void) {
     printf("  %s\n", m);
     HX_ASSERT(bad == 0, m);
 
+    /* one long echo (fixed Gate 96 ticks): the steps after its late first
+     * one fall exactly on the grid, at every tempo */
+    {
+        int wrong = 0;
+        for (int b = 0; b < 7; b++) {
+            hx_t *h = rig(bpms[b], 0, 6, 1, 1, 8);
+            play(h, 16, g_a, &g_an);
+            int n63 = 0, off = 0;
+            for (int i = 0; i < g_an; i++) {
+                if (g_a[i].kind || g_a[i].a != 63) continue;
+                off += n63++ ? g_a[i].tick % 24 != 0 : g_a[i].tick % 24 > 2;
+            }
+            if (n63 < 3 || off) { printf("  %s bpm, a long echo: %d arp steps, %d off the grid\n", bpms[b], n63, off); wrong++; }
+            hx_destroy(h);
+        }
+        HX_ASSERT(wrong == 0, "after a first note a moment late, the arp's steps keep to the grid");
+    }
+
     /* the grace is a tick or two: a note 3 ticks past a point waits for the next */
     {
-        hx_t *h = rig("120", 3, 40, 0);
+        hx_t *h = rig("120", 3, 40, 0, 0, 0);
         play(h, 4, g_a, &g_an);
         uint32_t first = UINT32_MAX;
         for (int i = 0; i < g_an && first == UINT32_MAX; i++) if (!g_a[i].kind) first = g_a[i].tick;
