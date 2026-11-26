@@ -95,6 +95,80 @@ static int run(int drum, int reps, int dtime, int swing, int *filled) {
     return ok;
 }
 
+/* ---- the queue itself, filled by hand ---- */
+static int q_count(const pfx_event_t *ev, int n, uint8_t st, uint8_t pitch) {
+    int c = 0;
+    for (int i = 0; i < n; i++) c += (ev[i].msg[0] & 0xF0) == st && ev[i].msg[1] == pitch;
+    return c;
+}
+static void q_put(pfx_event_t *ev, int *n, uint64_t at, uint8_t st, uint8_t pitch, uint8_t vel, uint8_t flags) {
+    ev[*n] = (pfx_event_t){ at, { st, pitch, vel }, flags };
+    (*n)++;
+}
+static int whitebox(void) {
+    int bad = 0;
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    HX_NO_LEAD(h);
+    play_fx_t *fx = &inst->tracks[1].pfx;
+    const uint8_t ch = (uint8_t)inst->tracks[1].channel;
+    /* (a) a fixed-Gate echo, on and off queued together, gives way: both go */
+    fx->event_count = 0;
+    q_put(fx->events, &fx->event_count, 1000, 0x90 | ch, 70, 90, PFX_EV_ECHO);
+    q_put(fx->events, &fx->event_count, 1100, 0x80 | ch, 70, 0, 0);
+    while (fx->event_count < MAX_PFX_EVENTS) q_put(fx->events, &fx->event_count, 5000, 0x80 | ch, 80, 0, 0);
+    pfx_q_insert(fx, 900, 0x80 | ch, 60, 0, PFX_EV_OWN);
+    if (q_count(fx->events, fx->event_count, 0x80, 60) != 1 || q_count(fx->events, fx->event_count, 0x90, 70)
+            || q_count(fx->events, fx->event_count, 0x80, 70) || q_count(fx->events, fx->event_count, 0x80, 80) != MAX_PFX_EVENTS - 2) {
+        printf("  white-box (a): own off %d, echo on %d, its off %d, others %d\n", q_count(fx->events, fx->event_count, 0x80, 60),
+               q_count(fx->events, fx->event_count, 0x90, 70), q_count(fx->events, fx->event_count, 0x80, 70), q_count(fx->events, fx->event_count, 0x80, 80));
+        bad++;
+    }
+    /* (b) an echo whose off waits for its held note: the note forgets it */
+    fx->event_count = 0;
+    pfx_active_t *an = &fx->active_notes[50];
+    memset(an, 0, sizeof *an);
+    an->active = 1; an->channel = ch; an->stored_repeat_count = 1;
+    an->reps[0].fire_at = 1000; an->reps[0].qn = 1; an->reps[0].qpitch[0] = 70; an->reps[0].waits = 1;
+    q_put(fx->events, &fx->event_count, 1000, 0x90 | ch, 70, 90, PFX_EV_ECHO | PFX_EV_WAITS);
+    while (fx->event_count < MAX_PFX_EVENTS) q_put(fx->events, &fx->event_count, 5000, 0x80 | ch, 80, 0, 0);
+    pfx_q_insert(fx, 900, 0x80 | ch, 60, 0, PFX_EV_OWN);
+    if (an->reps[0].waits || q_count(fx->events, fx->event_count, 0x80, 60) != 1 || q_count(fx->events, fx->event_count, 0x90, 70)) {
+        printf("  white-box (b): waits %d, own off %d, echo on %d\n", an->reps[0].waits, q_count(fx->events, fx->event_count, 0x80, 60), q_count(fx->events, fx->event_count, 0x90, 70));
+        bad++;
+    }
+    an->active = 0;
+    /* (c) nothing can give way (every echo sounding, offs queued): the
+     * note's own off goes out at once */
+    fx->event_count = 0;
+    while (fx->event_count < MAX_PFX_EVENTS) q_put(fx->events, &fx->event_count, 5000, 0x80 | ch, 80, 0, 0);
+    pfx_send(fx, 0x90 | ch, 60, 100);
+    hx_clear_capture(h);
+    pfx_q_insert(fx, 900, 0x80 | ch, 60, 0, PFX_EV_OWN);
+    int sent = 0;
+    for (int i = 0; i < hx_stub_event_count(); i++) {
+        const hx_midi_event *e = hx_stub_event(i);
+        sent += e->bytes[2] == 60 && ((e->bytes[1] & 0xF0) == 0x80 || ((e->bytes[1] & 0xF0) == 0x90 && !e->bytes[3]));
+    }
+    if (sent != 1) { printf("  white-box (c): the note's off sent %d times now (want 1)\n", sent); bad++; }
+    fx->event_count = 0;
+    /* (d) a drum lane: as (a) */
+    drum_pfx_t *px = &inst->tracks[2].drum_lane_pfx[1];
+    px->event_count = 0;
+    q_put(px->events, &px->event_count, 1000, 0x90 | ch, 70, 90, 0);
+    q_put(px->events, &px->event_count, 1100, 0x80 | ch, 70, 0, 0);
+    while (px->event_count < DRUM_PFX_MAX_EVENTS) q_put(px->events, &px->event_count, 5000, 0x80 | ch, 80, 0, 0);
+    drum_pfx_q_insert(px, 900, 0x80 | ch, 36, 0, PFX_EV_OWN);
+    if (q_count(px->events, px->event_count, 0x80, 36) != 1 || q_count(px->events, px->event_count, 0x90, 70) || q_count(px->events, px->event_count, 0x80, 70)) {
+        printf("  white-box (d, drum): own off %d, echo on %d, its off %d\n", q_count(px->events, px->event_count, 0x80, 36),
+               q_count(px->events, px->event_count, 0x90, 70), q_count(px->events, px->event_count, 0x80, 70));
+        bad++;
+    }
+    px->event_count = 0;
+    hx_destroy(h);
+    return bad;
+}
+
 int main(void) {
     static const int dts[] = { 5, 8, 11 };          /* 1/16, 1/8, 1/4 */
     static const int reps[] = { 8, 16 };
@@ -110,6 +184,7 @@ int main(void) {
     printf("  %s; %d with a note lost or hung\n", m, bad);
     HX_ASSERT(filled >= n / 2, "control: the queue fills");
     HX_ASSERT(bad == 0, "a full echo queue loses no note's own event");
+    HX_ASSERT(whitebox() == 0, "a full queue: the last echo gives way with its off, or the note's event goes at once");
     printf("PASS: full echo queue keeps notes\n");
     return 0;
 }
