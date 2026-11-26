@@ -10,6 +10,7 @@
  *   D8  an echo on the next note's tick drops (Retrig)
  *   D9  under SEQ ARP a fixed-Gate echo rings to its note's end
  *   D10 a wrapped multi-loop bake wraps its last loop's tail to the start
+ *   D11 the same key struck again while sounding restrikes (no merge)
  * Sequential hx instances only — the stub host is process-global. */
 #include "harness.h"
 
@@ -219,6 +220,32 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- D11: the same key struck again while sounding ends there and
+     * strikes again (playback's retrigger guard), never merging: 60 at 0, 24
+     * and 48, each 30 long, echoes on +7 -> 60@0+24, 60@24+24, 60@48+30. */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 8; cl->loop_start = 0;
+        for (int k = 0; k < 3; k++) clip_insert_note(cl, (uint32_t)(24 * k), 30, 60, 90);
+        clip_build_steps_from_notes(cl);
+    }
+    hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 1");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_time 8");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 7");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 0");
+    hx_set_param(h, "bake", "1 0 0 1 0 1");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        const int a = find_note(cl, 0, 60), b = find_note(cl, 24, 60), c = find_note(cl, 48, 60);
+        HX_ASSERT(a >= 0 && b >= 0 && c >= 0, "D11: three strikes of 60, not one merged note");
+        HX_ASSERT(cl->notes[a].gate == 24 && cl->notes[b].gate == 24 && cl->notes[c].gate == 30, "D11: each ends where the key strikes again");
+    }
+    hx_destroy(h);
+
     /* ---- A3: a phrase starts as playback starts it (arp_tick): Sync off
      * fires on the note (ruled 2026-11-21), Sync on waits for the rate
      * boundary; either way the Arp Steps column re-anchors there. A note at
@@ -270,6 +297,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, D9 arp echo, D10 multi-loop tail, A3 phrase start)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, D9 arp echo, D10 multi-loop tail, D11 restrike, A3 phrase start)\n");
     return 0;
 }
