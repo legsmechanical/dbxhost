@@ -4534,19 +4534,24 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * where this one sounds is brought forward (pfx_offs_before). */
     int i;
     {
+        /* not when SEQ ARP takes the note: it does not sound itself, and
+         * what is queued of its pitch is the arp's own output — left alone */
+        const int arp_takes = fx->arp.style != 0 && !pad_mode_sampled(tr->pad_mode);
         const uint64_t sounds = now + ((inst->emit_bypass_swing || inst->in_queue_drain) ? 0
                                        : groove_park_now(inst, (int)fx->track_idx));
-        for (i = 0; i < gc; i++) pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
+        if (!arp_takes)
+            for (i = 0; i < gc; i++) pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
         /* sounding now: what is already due goes out first, in time order
          * (a moved off, an older note-on parked to this instant) — never
          * from inside a drain, which would re-enter it */
-        if (sounds <= now && !inst->in_queue_drain) pfx_q_fire(fx, now);
+        if (sounds <= now && !inst->in_queue_drain && !arp_takes) pfx_q_fire(fx, now);
     }
     for (i = 0; i < gc; i++)
         pfx_send(fx, on_s, gen[i], (uint8_t)v);
     /* held back by swing or a groove slot? Its own parked note-on — the one
      * just queued, at now + the park — not another note's of the pitch */
-    if (gc > 0 && g_inst && !inst->emit_bypass_swing && !inst->in_queue_drain) {
+    if (gc > 0 && g_inst && !inst->emit_bypass_swing && !inst->in_queue_drain
+            && !(fx->arp.style != 0 && !pad_mode_sampled(tr->pad_mode))) {   /* SEQ ARP took it: nothing of its own parked */
         const uint64_t want = now + groove_park_now(inst, (int)fx->track_idx);
         const uint64_t at = pfx_parked_on_at(fx->events, fx->event_count, ch, gen[0]);
         if (want > now && at == want) an->on_park_at = at;

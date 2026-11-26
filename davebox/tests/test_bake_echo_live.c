@@ -32,6 +32,7 @@ static int to_notes(const ev_t *e, int n, nt_t *out, uint32_t end) {
 static long g_slack, g_ties;
 static uint32_t g_span;            /* the clip's loop, in ticks */
 static uint32_t g_ons[4]; static int g_non;
+static uint8_t g_pit[4];
 static long g_tie_why[6];
 /* a pitch playback itself plays differently pass to pass (an echo on the
  * very tick of a strike: dropped by its drain one pass, sounding the next,
@@ -70,14 +71,22 @@ static int ends_on_strike(const nt_t *x, const nt_t *o, int on_) {
 static int unsteady(const nt_t *x) { if (!g_unsteady[x->p]) return 0; g_tie_why[4]++; return 1; }
 /* a piece of a note playback split where the bake joined: contained in one
  * baked note, and playback strikes the pitch again at one of its edges */
+static int clip_strike(uint8_t p, uint32_t t) {
+    for (int k = 0; k < g_non; k++) if (p == g_pit[k] && t % g_span == g_ons[k] % g_span) return 1;
+    return 0;
+}
 static int split(const nt_t *x, const nt_t *self, int sn, const nt_t *o, int on_) {
     int in = 0, again = 0;
     for (int i = 0; i < on_ && !in; i++) in = o[i].p == x->p && o[i].on <= x->on + 1 && o[i].off + 1 >= x->off;
-    for (int i = 0; i < sn && !again; i++)
-        again = self[i].p == x->p && &self[i] != x
-             && ((self[i].on + 1 >= x->off && self[i].on <= x->off + 1)              /* struck again where it ends */
-              || (self[i].off + 1 >= x->on && self[i].off <= x->on + 1 && !self[i].cut));   /* or where it starts, the one before ended */
-    if (!in || !again || x->cut) return 0;           /* restruck, not ended: a restrike, not a tie */
+    if (!in || x->cut) return 0;                     /* restruck, not ended: a restrike, not a tie */
+    /* the split point — where playback strikes the pitch again — is never a
+     * note of the clip striking (that restrike is its own, not a tie) */
+    for (int i = 0; i < sn && !again; i++) {
+        if (self[i].p != x->p || &self[i] == x) continue;
+        if (self[i].on + 1 >= x->off && self[i].on <= x->off + 1 && !clip_strike(x->p, self[i].on)) again = 1;   /* struck again where it ends */
+        if (self[i].off + 1 >= x->on && self[i].off <= x->on + 1 && !self[i].cut && !clip_strike(x->p, x->on)) again = 1;   /* or where it starts */
+    }
+    if (!again) return 0;
     g_tie_why[5]++;
     return 1;
 }
@@ -113,7 +122,6 @@ static int held_loop(const nt_t *x, const nt_t *o, int on_) {
  * or the other first by a sample — mostly the note's Retrig drops the echo
  * (as the bake does), sometimes it plays. A tie, counted; never a note of
  * the clip itself. A zero-length note is silence. */
-static uint8_t g_pit[4];
 static int tie(const nt_t *x) {
     if (x->off == x->on) { g_tie_why[0]++; return 1; }
     for (int i = 0; i < g_non; i++) if (x->p == g_pit[i]) return 0;     /* a note itself: never */
@@ -149,7 +157,7 @@ static int cmp_window(uint32_t w0, uint32_t w1, uint32_t end, int verbose) {
     return bad;
 }
 
-static int g_drum, g_export_bad;
+static int g_drum, g_wide, g_export_bad;
 static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     static const int TPS[] = { 12, 24, 48 };
     rs = (uint32_t)seed * 2654435761u;
@@ -171,7 +179,7 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     const int tps = TPS[rnd(3)], L = 2 * (2 + (int)rnd(7));   /* even: whole song steps at any step size */
     cl->note_count = 0; g_non = 0;
     cl->ticks_per_step = (uint16_t)tps; cl->length = (uint16_t)L; cl->loop_start = 0;
-    const int span = L * tps, nn = 1 + (int)rnd(3);
+    const int span = L * tps, nn = 1 + (int)rnd(g_wide ? 4 : 3);
     int at = 0, w = 0;
     for (int i = 0; i < nn; i++) {
         /* now and then a chord: on the tick of the note before */
@@ -179,7 +187,11 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
         /* shorter than the loop: in this harness playback goes silent after
          * a note longer than its loop (a matter of its own, kept out) */
         const int g = 1 + (int)rnd((uint32_t)(span - 1));
-        const uint8_t p = g_drum ? ln->midi_note : (uint8_t)(36 + 24 * i);
+        /* wide: near pitches (an echo or harmony copy can land on another
+         * note), never the same pitch twice (that is restrikes, kept out) */
+        static const int NEAR[] = { 0, 0, 2, 3, 5, 7, 12 };
+        uint8_t p = g_drum ? ln->midi_note : g_wide ? (uint8_t)(60 + NEAR[rnd(7)]) : (uint8_t)(36 + 24 * i);
+        if (g_wide) for (int again = 1; again; ) { again = 0; for (int q = 0; q < g_non; q++) if (g_pit[q] == p) { p++; again = 1; } }
         if (g_non < 4) { g_pit[g_non] = p; g_ons[g_non++] = (uint32_t)tk; }
         clip_insert_note(cl, (uint32_t)tk, (uint16_t)g, p, 90);
         w += snprintf(desc + w, dn - w, " n%u@%d+%d", p, tk, g);
@@ -189,7 +201,14 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
     const int dt = (int)rnd(8), rep = 1 + (int)rnd(3), rt = (int)rnd(2);
     /* pitch feedback 0 (the default: echoes on the note's own pitch, merging
      * as playback's output count merges them) a third of the time */
-    const int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : (rnd(3) == 0 ? 0 : 1 + (int)rnd(5));
+    int pfb = getenv("BEL_PFB") ? atoi(getenv("BEL_PFB")) : (rnd(3) == 0 ? 0 : 1 + (int)rnd(5));
+    int h1 = 0, cfb = 0;
+    if (g_wide) {                                   /* any pitch feedback, a harmony copy, clock feedback */
+        static const int PF[] = { 0, 0, 2, 3, 5, 7, -2, -5, 12 };
+        if (!getenv("BEL_PFB")) pfb = PF[rnd(9)];
+        if (rnd(4) == 0) h1 = PF[2 + rnd(6)];
+        if (rnd(5) == 0) cfb = (int)rnd(60) - 20;
+    }
     const int fg = rnd(3) == 0 ? 1 + (int)rnd(5) : 0;   /* now and then a fixed echo Gate */
     if (g_drum) {
         ln->pfx_params.delay_level = 127; ln->pfx_params.repeat_times = rep;
@@ -204,8 +223,10 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
         snprintf(v, sizeof v, "delay_pitch_fb %d", pfb);  hx_set_param(h, "t1_c0_pfx_set", v);
         snprintf(v, sizeof v, "delay_retrig %d", rt);     hx_set_param(h, "t1_c0_pfx_set", v);
         snprintf(v, sizeof v, "delay_gate_fb %d", fg);    hx_set_param(h, "t1_c0_pfx_set", v);
+        if (h1)  { snprintf(v, sizeof v, "harm_interval1 %d", h1); hx_set_param(h, "t1_c0_pfx_set", v); }
+        if (cfb) { snprintf(v, sizeof v, "delay_clock_fb %d", cfb); hx_set_param(h, "t1_c0_pfx_set", v); }
     }
-    w += snprintf(desc + w, dn - w, " | %s tps%d L%d dt%d rep%d pfb%d rt%d fg%d g%d", g_drum ? "drum" : "melodic",
+    w += snprintf(desc + w, dn - w, " | %s h%d cfb%d tps%d L%d dt%d rep%d pfb%d rt%d fg%d g%d", g_drum ? "drum" : g_wide ? "wide" : "melodic", h1, cfb,
                   tps, L, dt, rep, pfb, rt, fg, ln ? ln->pfx_params.gate_time : 100);
     if (bake && !g_drum) {
         /* the Ableton export renders the same echoes, without baking */
@@ -231,9 +252,10 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
 int main(int argc, char **argv) {
     const int s0 = argc > 1 ? atoi(argv[1]) : 1, s1 = argc > 2 ? atoi(argv[2]) : 150;
     int fails = 0; long cmp = 0;
-    for (int run = 0; run < 2 * (s1 - s0 + 1); run++) {
-        const int seed = s0 + run / 2;
-        g_drum = run & 1;
+    for (int run = 0; run < 3 * (s1 - s0 + 1); run++) {
+        const int seed = s0 + run / 3;
+        g_drum = run % 3 == 1;
+        g_wide = run % 3 == 2;                     /* a second melodic pass, wide */
         /* drum lanes only on request (BEL_KIND=1): a drum echo repeats its
          * hit's own pitch, and how a bake should hold that is still open */
         if ((getenv("BEL_KIND") ? atoi(getenv("BEL_KIND")) : 0) != g_drum) continue;

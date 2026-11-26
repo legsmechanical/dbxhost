@@ -70,11 +70,23 @@ static int bake_same_pitch(bake_note_t *out, int oc, int out_max, int n_src, con
              * end, after them all — then the sequencer (note-offs, then each
              * strike: its drain's offs, its note-on) */
             ev[en++] = (bake_ev_t){ (int64_t)out[i].tick + sh, src ? 5u + 2u * (uint32_t)i : 1u, 1, out[i].pitch, i };
-            ev[en++] = (bake_ev_t){ (int64_t)out[i].tick + out[i].gate + sh,
-                                    src ? 3u : (paired[i] ? 0u : 2u), 0, out[i].pitch, i };
+            /* a note of the clip ends at its gate — or where the same key
+             * strikes again, sooner: playback ends it there, just before the
+             * new note-on (pfx_note_on's retrigger guard) */
+            uint32_t g = out[i].gate, key = src ? 3u : (paired[i] ? 0u : 2u);
+            if (src) {
+                int j;
+                for (j = 0; j < n_src; j++) {
+                    if (out[j].prim != out[i].prim) continue;
+                    uint32_t tj = out[j].tick;
+                    if (tj <= out[i].tick) { if (!(wrapped && cyc)) continue; tj += cyc; }
+                    if (tj - out[i].tick < g) { g = tj - out[i].tick; key = 5u + 2u * (uint32_t)j - 1u; }
+                }
+            }
+            ev[en++] = (bake_ev_t){ (int64_t)out[i].tick + g + sh, key, 0, out[i].pitch, i };
         }
         for (i = 0; i < ph_n && en < BAKE_EV_MAX; i++)
-            ev[en++] = (bake_ev_t){ (int64_t)ph[i].tick + sh, 4u + 2u * (uint32_t)ph[i].strike, 0, ph[i].pitch, -1 };
+            ev[en++] = (bake_ev_t){ (int64_t)ph[i].tick + sh, ph[i].strike < 0 ? 2u : 4u + 2u * (uint32_t)ph[i].strike, 0, ph[i].pitch, -1 };
     }
     qsort(ev, (size_t)en, sizeof *ev, bake_ev_cmp);
     int cnt[128] = { 0 }, from[128];
@@ -121,6 +133,9 @@ static int bake_same_pitch(bake_note_t *out, int oc, int out_max, int n_src, con
     return rn;
 }
 
+/* note_gate: 0 drum lanes / POST (the track's default echo gate); 1 a
+ * sequenced melodic clip; 2 the same, where this one cycle is the whole loop
+ * (a wrapped tail folds onto its own start) */
 static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_gate,
                                 play_fx_t *fx, uint32_t clip_ticks,
                                 uint32_t max_echo_tick,
@@ -240,13 +255,6 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
              * live); else — drum lanes, POST's returning notes — the track's
              * default gate, GATE_TICKS * gate_time% (0 = instant off live; 1
              * tick is the closest bakeable). */
-            if (dropped) {                          /* drained before it sounds: its off only */
-                if (ph_n < (int)(sizeof ph / sizeof ph[0]))
-                    ph[ph_n++] = (bake_phantom_t){ drop_tick, drop_strike, (uint8_t)echo_pitch };
-                cur_delay *= (1.0 + fx->fb_clock / 100.0);
-                if (cur_delay < 1.0) cur_delay = 1.0;
-                continue;
-            }
             uint32_t eg = fx->fb_gate_time > 0
                 ? (uint32_t)GATE_FIXED_TICKS[fx->fb_gate_time - 1]
                 : note_gate ? (uint32_t)in[ni].gate
@@ -291,6 +299,31 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
              * rule above: a drum lane's echoes repeat its hit's own pitch and
              * are an open question of their own (checked against playback:
              * tests/test_bake_echo_live.c). */
+            if (dropped) {
+                /* drained before it sounds: the drain sends an off for it,
+                 * and a second comes from its note's end, as for every echo
+                 * (pfx_sched_delay_offs) — at its own off time, or at once if
+                 * that has passed, or at the next drain before then. A
+                 * fixed-Gate pair is drained whole: both offs at once. */
+                if (ph_n < (int)(sizeof ph / sizeof ph[0]))
+                    ph[ph_n++] = (bake_phantom_t){ drop_tick, drop_strike, (uint8_t)echo_pitch };
+                uint32_t t2 = echo_tick + eg;
+                int s2 = -1, j;
+                if (fx->fb_gate_time > 0 && !waits) { t2 = drop_tick; s2 = drop_strike; }
+                else {
+                    if (t2 < src_end) t2 = src_end;
+                    for (j = 0; j < in_count; j++) {
+                        uint32_t tj = in[j].tick;
+                        while (tj <= src_end || tj < drop_tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
+                        if (tj < t2) { t2 = tj; s2 = j; }
+                    }
+                }
+                if (ph_n < (int)(sizeof ph / sizeof ph[0]))
+                    ph[ph_n++] = (bake_phantom_t){ t2, s2, (uint8_t)echo_pitch };
+                cur_delay *= (1.0 + fx->fb_clock / 100.0);
+                if (cur_delay < 1.0) cur_delay = 1.0;
+                continue;
+            }
             if (note_gate && fx->delay_retrig) {
                 if (!waits) src_end = 0;
                 uint32_t cut = UINT32_MAX;
@@ -314,7 +347,10 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
             if (cur_delay < 1.0) cur_delay = 1.0;
         }
     }
-    if (merge) oc = bake_same_pitch(out, oc, out_max, in_count, paired, ph, ph_n, clip_ticks, max_echo_tick == UINT32_MAX);
+    /* folded on itself only where this one cycle is the loop (note_gate 2):
+     * a multi-loop bake wraps its last loop's tail into its first itself */
+    if (merge) oc = bake_same_pitch(out, oc, out_max, in_count, paired, ph, ph_n, clip_ticks,
+                                    note_gate == 2 && max_echo_tick == UINT32_MAX);
     return oc;
 }
 
@@ -630,7 +666,7 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
                 /* Wrapped cycle: generate all echoes (UINT32_MAX), fold mod cycle
                  * below → steady-state. Open cycle: stop echoes at cycle_ticks → clean
                  * first pass (tail cut by the loop brace anyway). */
-                out_count = bake_stage_midi_dly(inst, scale_aware, 1, &fx, cycle_ticks,
+                out_count = bake_stage_midi_dly(inst, scale_aware, 2, &fx, cycle_ticks,
                                                 wrapped ? UINT32_MAX : cycle_ticks,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
@@ -987,7 +1023,7 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
         for (si = 0; si < 2; si++) {
             int out_count;
             if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
-                out_count = bake_stage_midi_dly(inst, scale_aware, 1, &fx, cycle_ticks,
+                out_count = bake_stage_midi_dly(inst, scale_aware, effectiveLoops == 1 ? 2 : 1, &fx, cycle_ticks,
                                                 (wrap && loop == effectiveLoops - 1) ? UINT32_MAX
                                                     : (uint32_t)(effectiveLoops - loop) * cycle_ticks,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
