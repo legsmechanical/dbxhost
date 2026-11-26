@@ -63,6 +63,20 @@ int main(void) {
     { nt_t n[] = { { 0, 48, 60 }, { 24, 12, 64 } };
       want(run(n, 2, q, 1, 60, 40), "a held note sounds on when the next one starts");
       want(run(n, 2, q, 0, 60, 40), "control: so it does with Retrig off"); }
+    /* a note's own off still queued when the next note starts (a note swung
+     * late, ending past the next, on-time step): it keeps its length */
+    { nt_t n[] = { { 24, 36, 60 }, { 48, 12, 64 } };
+      hx_t *h = rig(n, 2, q);
+      hx_set_param(h, "groove_kind", "1"); hx_set_param(h, "groove_amt", "60");
+      rig_launch(h, 1, 0);
+      play(h, 32, g_a, &g_an);
+      want(sounding(60, 58), "a swung note sounds on past the next note's start");
+      hx_destroy(h); }
+    /* a pitch struck again while it sounds, its echo (on a held note's pitch)
+     * still waiting: the echo goes silently */
+    { nt_t n[] = { { 0, 200, 65 }, { 10, 48, 60 }, { 30, 12, 60 } };
+      static const char *const sp[] = { "delay_time 8", "delay_pitch_fb 5", NULL };
+      want(run(n, 3, sp, 1, 65, 150), "a note struck again, its echo dropped, leaves a held note on the echo's pitch alone"); }
     /* a chord, and its echo */
     { nt_t n[] = { { 0, 24, 60 }, { 0, 24, 64 }, { 0, 24, 67 } };
       int all = 1, echo = 1;
