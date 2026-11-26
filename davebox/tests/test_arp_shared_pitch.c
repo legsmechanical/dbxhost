@@ -2,7 +2,9 @@
  * it. A long 64 and a short 60 harmonized a third up (also 64) give the arp
  * the same pitch twice; the arp kept one entry per pitch, so when the short
  * note ended it took 64 away from under the long one, and the arp played only
- * the long note's harmony (68) to its end. Live and baked. */
+ * the long note's harmony (68) to its end. A note held before both ends
+ * between them, so the entries move in the buffer with their counts. Live
+ * and baked. */
 #include "pfx_rig.h"
 
 static hx_t *rig(void) {
@@ -13,7 +15,8 @@ static hx_t *rig(void) {
     hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
     clip_t *cl = &inst->tracks[1].clips[0];
     cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 16; cl->loop_start = 0;
-    clip_insert_note(cl, 0, 192, 64, 100);      /* the long note */
+    clip_insert_note(cl, 0, 30, 50, 100);       /* held first, ends while 64 is held twice: */
+    clip_insert_note(cl, 6, 186, 64, 100);      /* the entries after it move down, with their counts */
     clip_insert_note(cl, 24, 12, 60, 100);      /* + a third: 64 again, ends at 36 */
     clip_build_steps_from_notes(cl);
     hx_set_param(h, "t1_c0_pfx_set", "harm_interval1 4");
