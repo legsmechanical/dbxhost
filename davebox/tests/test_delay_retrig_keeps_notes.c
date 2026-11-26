@@ -98,6 +98,36 @@ int main(void) {
       const int with = run(n, 2, fx, 1, 65, 64), without = run(n, 2, fx, 0, 65, 64);
       want(!with && without, "an echo sounding is cut by the next note (and not with Retrig off)"); }
 
+    /* a pitch struck again while it still sounds (a pad over a sequenced
+     * note), its echo waiting on a held note's pitch: the old note's echo
+     * offs are queued as it ends, and the drop must cancel them — not send
+     * them as the off of a held 65. Through the engine directly: sequenced
+     * playback ends a pitch before striking it again. */
+    {
+        hx_t *h = rig(NULL, 0, ef);
+        seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 1");
+        seq8_track_t *tr = &inst->tracks[1];
+        pfx_sync_from_clip(tr);
+        hx_clear_capture(h);
+        pfx_note_on(inst, tr, 65, 100);
+        pfx_note_on(inst, tr, 60, 100);            /* its echo: 65, in 48 ticks */
+        hx_render(h, 20);
+        pfx_note_on(inst, tr, 60, 100);            /* struck again: the echo is dropped */
+        hx_render(h, 400);
+        int on = 0, seen = 0;
+        for (int i = 0; i < hx_stub_event_count(); i++) {
+            const hx_midi_event *e = hx_stub_event(i);
+            const uint8_t st = e->bytes[1] & 0xF0;
+            if (e->bytes[2] != 65 || (st != 0x90 && st != 0x80)) continue;
+            on = st == 0x90 && e->bytes[3] > 0;
+            seen += on;
+        }
+        want(seen > 0, "control: the held 65 went out");
+        want(on, "a pitch struck again while sounding: its dropped echo leaves a held note alone");
+        hx_destroy(h);
+    }
+
     /* SEQ ARP: a chord held the whole loop, struck again at the loop's start */
     {
         hx_t *h = hx_create(NULL);
