@@ -559,9 +559,15 @@ typedef struct {
  * NOTE FX + HARMZ + DELAY just like a normal sequenced note.
  *
  * Sole emit path while on=1: arp owns active_notes[primary] keying. */
-#define ARP_MAX_HELD     16
+#define ARP_MAX_HELD     32   /* pitches held at once; a note offered past this is dropped */
 #define ARP_MAX_OCTAVES  4
-#define ARP_MAX_CYCLE    (ARP_MAX_HELD * ARP_MAX_OCTAVES) /* 64: the note pool's cap; arp_build_pool trims the octave count to fit (16 notes x 5 copies would be 80) */
+/* The note pool's cap: arp_build_pool trims the octave count to fit (16
+ * notes x 5 copies would be 80; 32 notes play no octave copies above +1).
+ * Kept at 64: Random Other marks used positions in a 64-bit mask, and the
+ * pool is rebuilt and sorted on every step (measured on the Move: ~2 us at
+ * 64, ~75 us at 512). Every held note must fit with no copies. */
+#define ARP_MAX_CYCLE    64
+_Static_assert(ARP_MAX_HELD <= ARP_MAX_CYCLE, "every held note fits the arp's pool");
 #define ARP_RATE_DEFAULT 1                                /* 1/16 */
 
 /* SEQ ARP rate index → master 96-PPQN ticks per arp step.
