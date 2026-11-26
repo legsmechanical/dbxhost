@@ -4384,6 +4384,51 @@ static void pfx_offs_before(pfx_event_t *ev, int *n, uint8_t ch, uint8_t pitch, 
     pfx_q_pull(ev, n, (uint8_t)(0x80 | ch), pitch, PFX_EV_HELD | PFX_EV_OWN | PFX_EV_BYPASS_SWING, 0, at);
 }
 
+/* DELAY Retrig, at a note-on: the echoes still queued are dropped. One that
+ * has not sounded goes silently, with its off — queued with it, or due at its
+ * note's end (that note's record, in rec[], forgets it) — so no off of an
+ * echo that never played reaches a note sounding on its pitch, now or later.
+ * One already sounding is cut: its off is returned in offs[] for the caller to
+ * send now. What is not an echo stays: what swing holds back, a note's own
+ * off. Returns how many offs; one cancelled has pitch 0xFF. */
+static int pfx_retrig_drop(pfx_event_t *ev, int *n, pfx_active_t *const *rec, int nrec,
+                           uint8_t (*offs)[2]) {
+    struct { uint64_t at; uint8_t ch, pitch, waits; } on[MAX_PFX_EVENTS];
+    int qi, k = 0, no = 0, nn = 0;
+    for (qi = 0; qi < *n; qi++) {
+        const pfx_event_t e = ev[qi];
+        const uint8_t st = e.msg[0] & 0xF0;
+        if (e.flags & (PFX_EV_BYPASS_SWING | PFX_EV_HELD | PFX_EV_OWN)) { ev[k++] = e; continue; }
+        if (st == 0x80 || (st == 0x90 && e.msg[2] == 0)) {
+            offs[no][0] = (uint8_t)(0x80 | (e.msg[0] & 0x0F)); offs[no][1] = e.msg[1]; no++;
+        } else if (st == 0x90) {
+            on[nn].at = e.fire_at; on[nn].ch = e.msg[0] & 0x0F; on[nn].pitch = e.msg[1];
+            on[nn].waits = (e.flags & PFX_EV_WAITS) != 0; nn++;
+        }
+    }
+    *n = k;
+    for (qi = 0; qi < nn; qi++) {
+        int r, i, j, done = 0;
+        /* its off not queued yet: its note, still held, forgets it */
+        for (r = 0; r < nrec && on[qi].waits && !done; r++) {
+            pfx_active_t *a = rec[r];
+            if (a->channel != on[qi].ch) continue;
+            for (i = 0; i < a->stored_repeat_count && !done; i++) {
+                if (a->reps[i].fire_at != on[qi].at) continue;
+                for (j = 0; j < a->reps[i].qn && !done; j++)
+                    if ((a->reps[i].waits & (1u << j)) && a->reps[i].qpitch[j] == on[qi].pitch) {
+                        a->reps[i].waits &= (uint8_t)~(1u << j);
+                        done = 1;
+                    }
+            }
+        }
+        /* else its off is queued: that one goes too */
+        for (j = 0; j < no && !done; j++)
+            if (offs[j][1] == on[qi].pitch && (offs[j][0] & 0x0F) == on[qi].ch) { offs[j][1] = 0xFF; done = 1; }
+    }
+    return no;
+}
+
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                         uint8_t orig_note, uint8_t vel) {
     /* A Slicer has no velocity (Josh, 2026-11-02: "no velocity modulation"):
@@ -4461,15 +4506,18 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         pfx_sched_delay_offs(fx, an, an->on_time,
                              an->gate_override_smp ? an->gate_override_smp
                                                    : pfx_gate_smp(inst, tr));
+        an->active = 0;   /* ended: its echoes' offs are queued, not waiting on it */
     }
 
-    /* Delay retrig: when enabled, a new note-on drops in-flight delay echoes.
-     * Send note-off for every queued event referencing a sounding pitch and
-     * drain the event ring so the prior tail doesn't pile on top of the new
-     * note's repeats. Synths drop unmatched offs, so duplicate offs from
-     * still-pending note-off events are harmless. Drain runs BEFORE the new
-     * note's immediate emission below so we don't silence what we're about
-     * to play. */
+    /* Delay retrig: when enabled, a new note-on drops in-flight delay echoes,
+     * so the prior tail doesn't pile on top of the new note's repeats: one
+     * not yet sounded goes silently, one sounding is cut now
+     * (pfx_retrig_drop). It used to send an off for every queued event: an
+     * echo that never played took a note of its pitch with it — a chord kept
+     * only its last note, a held note ended at the next one, and the off due
+     * at a dropped echo's note end cut a later note.
+     * A note's own queued off stays too. Runs BEFORE the new note's immediate
+     * emission below so we don't silence what we're about to play. */
     /* ⚠⚠ SWING SHARES THIS QUEUE. Swing parks off-beat note-ons and note-offs
      * here too (PFX_EV_BYPASS_SWING); they are not echoes, so they STAY. The
      * old drain zeroed the whole ring AFTER sending its offs through pfx_send,
@@ -4479,38 +4527,29 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * delay_retrig is on by default (Josh, 2026-09-30: mngk, 22% swing). The
      * offs are collected first and the ring compacted BEFORE they are sent,
      * so a re-queued off lands in the kept ring, on the swing grid. */
+    /* A chord is one strike: its notes do not drop each other's echoes. The
+     * first of them dropped what was older; a note already struck at this
+     * same instant means this is not the first (it used to leave a chord
+     * echoing only its last note). */
+    int chord = 0;
     if (fx->delay_retrig && fx->event_count > 0) {
+        int p;
+        for (p = 0; p < 128 && !chord; p++)
+            chord = fx->active_notes[p].active && fx->active_notes[p].on_time == now && &fx->active_notes[p] != an;
+    }
+    if (fx->delay_retrig && fx->event_count > 0 && !chord) {
         uint8_t offs[MAX_PFX_EVENTS][2];
-        int qi, k = 0, no = 0;
-        for (qi = 0; qi < fx->event_count; qi++) {
-            pfx_event_t *ev = &fx->events[qi];
-            uint8_t st = ev->msg[0] & 0xF0;
-            if (ev->flags & (PFX_EV_BYPASS_SWING | PFX_EV_HELD)) { fx->events[k++] = *ev; continue; }   /* HELD: its note's own off, after its swung on */
-            /* A table groove's own note-off stays where its note-on put
-             * it — flushing it would re-time it to THIS note's park and
-             * resize the note it ends. Except when this note plays the same
-             * pitch and the off would land after it: then it is brought
-             * forward, as ever, so it cannot cut the new note short. */
-            if (ev->flags & PFX_EV_KEEP) {
-                int same = 0, gi;
-                for (gi = 0; gi < gc; gi++) if (gen[gi] == ev->msg[1]) same = 1;
-                if (!same || !g_inst
-                        || ev->fire_at <= now + groove_note_park(g_inst, (int)fx->track_idx)) {
-                    fx->events[k++] = *ev; continue;
-                }
-            }
-            if (st == 0x90 || st == 0x80) {
-                offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
-                offs[no][1] = ev->msg[1];
-                no++;
-            }
-        }
-        fx->event_count = k;
+        pfx_active_t *rec[128];
+        int qi, nrec = 0, p;
+        for (p = 0; p < 128; p++) if (fx->active_notes[p].active) rec[nrec++] = &fx->active_notes[p];
+        const int no = pfx_retrig_drop(fx->events, &fx->event_count, rec, nrec, offs);
         for (qi = 0; qi < no; qi++) {
+            if (offs[qi][1] == 0xFF) continue;
             /* Behind its own parked note-on, if one is kept; bypass-flagged
              * like it, and pfx_q_insert puts it AFTER equal times. The ring
-             * cannot be full here: k + no is at most the old count. */
-            uint64_t at = pfx_parked_on_at(fx->events, k, (uint8_t)(offs[qi][0] & 0x0F), offs[qi][1]);
+             * cannot be full here: what is kept plus these is at most the
+             * old count. */
+            uint64_t at = pfx_parked_on_at(fx->events, fx->event_count, (uint8_t)(offs[qi][0] & 0x0F), offs[qi][1]);
             if (at) pfx_q_insert(fx, at, offs[qi][0], offs[qi][1], 0, PFX_EV_BYPASS_SWING);
             else    pfx_send(fx, offs[qi][0], offs[qi][1], 0);
         }
@@ -4541,6 +4580,21 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                                        : groove_park_now(inst, (int)fx->track_idx));
         if (!arp_takes)
             for (i = 0; i < gc; i++) pfx_offs_before(fx->events, &fx->event_count, ch, gen[i], sounds);
+        else
+            /* the arp holds the note from now: an older note's own off of the
+             * pitch still queued goes first, or it would take this one out of
+             * the arp (a chord held to the loop's end lost its restruck notes) */
+            for (i = 0; i < gc; i++) {
+                int e = 0;
+                while (e < fx->event_count) {
+                    pfx_event_t *q = &fx->events[e];
+                    if ((q->flags & PFX_EV_OWN) && q->msg[0] == (uint8_t)(0x80 | ch) && q->msg[1] == gen[i]) {
+                        memmove(q, q + 1, (size_t)(fx->event_count - e - 1) * sizeof *q);
+                        fx->event_count--;
+                        pfx_send(fx, (uint8_t)(0x80 | ch), gen[i], 0);
+                    } else e++;
+                }
+            }
         /* sounding now: what is already due goes out first, in time order
          * (a moved off, an older note-on parked to this instant) — never
          * from inside a drain, which would re-enter it */

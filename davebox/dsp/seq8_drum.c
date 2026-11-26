@@ -364,6 +364,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         /* ...and its echoes' offs, as a note-off would: the record is
          * overwritten below (see the melodic retrigger guard in pfx_note_on) */
         drum_pfx_sched_delay_offs(px, an, an->on_time, drum_pfx_gate_smp(inst, px));
+        an->active = 0;   /* ended: its echoes' offs are queued, not waiting on it */
     }
 
     /* Delay retrig (drum): drop in-flight echoes from prior hit, mirroring the
@@ -372,25 +373,14 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * sent — see the melodic drain in pfx_note_on (a swung note-off was
      * re-queued into the ring this then zeroed). */
     if (px->delay_retrig && px->event_count > 0) {
+        /* an echo not yet sounded goes silently, with its off; one sounding
+         * is cut now (pfx_retrig_drop) — its off used to go for every queued
+         * echo, and the one due at the hit's end then cut a later hit */
         uint8_t offs[DRUM_PFX_MAX_EVENTS][2];
-        int qi, k = 0, no = 0;
-        for (qi = 0; qi < px->event_count; qi++) {
-            pfx_event_t *ev = &px->events[qi];
-            uint8_t st = ev->msg[0] & 0xF0;
-            if (ev->flags & (PFX_EV_BYPASS_SWING | PFX_EV_HELD)) { px->events[k++] = *ev; continue; }
-            /* see the melodic flush in pfx_note_on */
-            if ((ev->flags & PFX_EV_KEEP)
-                    && ev->fire_at <= now + groove_note_park(inst, (int)px->track_idx)) {
-                px->events[k++] = *ev; continue;
-            }
-            if (st == 0x90 || st == 0x80) {
-                offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
-                offs[no][1] = ev->msg[1];
-                no++;
-            }
-        }
-        px->event_count = k;
-        for (qi = 0; qi < no; qi++) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
+        pfx_active_t *rec[1] = { an };
+        const int no = pfx_retrig_drop(px->events, &px->event_count, rec, an->active ? 1 : 0, offs);
+        int qi;
+        for (qi = 0; qi < no; qi++) if (offs[qi][1] != 0xFF) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
     }
 
     /* an off of the lane's note still queued past where this hit sounds

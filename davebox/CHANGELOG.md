@@ -26,6 +26,10 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **DELAY with Retrigger on no longer cuts notes**: a chord played only its last note, a held note
+  ended when the next one started, and a dropped echo could cut a later note of its pitch. A chord
+  now echoes as a chord, and baked clips match. A chord held to the loop's end under SEQ ARP also
+  keeps playing into the next pass.
 - **Short notes under swing no longer hang**: a short note late in a swung step could end before
   it started and ring on. It now plays its length from where swing puts it, up to the next note
   of the same pitch. Melodic and drum tracks.
