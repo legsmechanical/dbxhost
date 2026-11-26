@@ -26,6 +26,9 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **Many DELAY repeats no longer hang or drop notes**: a busy pattern with lots of echoes could fill
+  a track's echo memory, and then a note could ring on forever or, with swing, never play. Now the
+  latest echoes give way instead.
 - **DELAY with Retrigger on no longer cuts notes**: a chord played only its last note, a held note
   ended when the next one started, and a dropped echo could cut a later note of its pitch. A chord
   now echoes as a chord, and baked clips match. A chord held to the loop's end under SEQ ARP also

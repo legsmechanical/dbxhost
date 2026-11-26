@@ -3695,9 +3695,75 @@ static inline uint64_t pfx_ticks_to_smp(seq8_instance_t *inst, seq8_track_t *tr,
 /* Event queue (direct port from NoteTwist)                            */
 /* ------------------------------------------------------------------ */
 
+/* An echo's queued event: its note-on (not one swing holds back) or its
+ * note-off (not a note's own). What a full queue may give up for the rest. */
+#define PFX_EV_NOTE_OWN (PFX_EV_BYPASS_SWING | PFX_EV_HELD | PFX_EV_OWN | PFX_EV_KEEP)
+static inline int pfx_ev_echo_on(uint8_t s, uint8_t d2, uint8_t flags) {
+    return (s & 0xF0) == 0x90 && d2 > 0 && !(flags & PFX_EV_BYPASS_SWING);
+}
+static inline int pfx_ev_echo_off(uint8_t s, uint8_t d2, uint8_t flags) {
+    return ((s & 0xF0) == 0x80 || ((s & 0xF0) == 0x90 && d2 == 0)) && !(flags & PFX_EV_NOTE_OWN);
+}
+
+/* The queue is full and a note's own event — its note-off, or a note-on or
+ * -off swing holds back — needs a place: losing one hangs a note or drops it.
+ * The echo due to sound last gives up its place: it never sounds, and its off
+ * goes with it — queued (removed), or still due at its note's end (that
+ * note's record, in rec[], forgets it). 1 = a place was freed. */
+static int pfx_q_evict_echo(pfx_event_t *ev, int *n, pfx_active_t *const *rec, int nrec) {
+    int i, v = -1;
+    for (i = *n - 1; i >= 0 && v < 0; i--)
+        if (pfx_ev_echo_on(ev[i].msg[0], ev[i].msg[2], ev[i].flags)) v = i;
+    if (v < 0) return 0;
+    const pfx_event_t on = ev[v];
+    memmove(&ev[v], &ev[v + 1], (size_t)(*n - v - 1) * sizeof *ev);
+    (*n)--;
+    const uint8_t ch = on.msg[0] & 0x0F, pitch = on.msg[1];
+    if (on.flags & PFX_EV_WAITS) {
+        int r, k, j;
+        for (r = 0; r < nrec; r++) {
+            pfx_active_t *a = rec[r];
+            if (a->channel != ch) continue;
+            for (k = 0; k < a->stored_repeat_count; k++) {
+                if (a->reps[k].fire_at != on.fire_at) continue;
+                for (j = 0; j < a->reps[k].qn; j++)
+                    if ((a->reps[k].waits & (1u << j)) && a->reps[k].qpitch[j] == pitch) {
+                        a->reps[k].waits &= (uint8_t)~(1u << j);
+                        return 1;
+                    }
+            }
+        }
+    }
+    /* its off is queued: the last of the pitch's echo offs after it */
+    for (i = *n - 1; i >= 0; i--)
+        if (pfx_ev_echo_off(ev[i].msg[0], ev[i].msg[2], ev[i].flags) && (ev[i].msg[0] & 0x0F) == ch
+                && ev[i].msg[1] == pitch && ev[i].fire_at >= on.fire_at) {
+            memmove(&ev[i], &ev[i + 1], (size_t)(*n - i - 1) * sizeof *ev);
+            (*n)--;
+            break;
+        }
+    return 1;
+}
+
 static void pfx_q_insert(play_fx_t *fx, uint64_t fire_at,
                          uint8_t s, uint8_t d1, uint8_t d2, uint8_t flags) {
-    if (fx->event_count >= MAX_PFX_EVENTS) return;
+    if (fx->event_count >= MAX_PFX_EVENTS) {
+        /* an echo's own event: its caller made room first, or handles none */
+        if (pfx_ev_echo_on(s, d2, flags) || pfx_ev_echo_off(s, d2, flags)) return;
+        pfx_active_t *rec[128];
+        int p, nrec = 0;
+        for (p = 0; p < 128; p++) if (fx->active_notes[p].active) rec[nrec++] = &fx->active_notes[p];
+        if (!pfx_q_evict_echo(fx->events, &fx->event_count, rec, nrec)) {
+            /* no echo to give way (all sounding, their offs queued): send it
+             * now, early, rather than lose it */
+            if (flags & PFX_EV_BYPASS_SWING) { pfx_emit(fx, s, d1, d2); return; }
+            const uint8_t drain = g_inst ? g_inst->in_queue_drain : 0;
+            if (g_inst) g_inst->in_queue_drain = 1;   /* as from the queue: no park again */
+            pfx_send(fx, s, d1, d2);
+            if (g_inst) g_inst->in_queue_drain = drain;
+            return;
+        }
+    }
     int lo = 0, hi = fx->event_count;
     while (lo < hi) {
         int mid = (lo + hi) >> 1;

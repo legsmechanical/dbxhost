@@ -61,9 +61,22 @@ static void drum_pfx_emit_now(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_
     }
 }
 
+static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2);
 static void drum_pfx_q_insert(drum_pfx_t *px, uint64_t fire_at,
                               uint8_t s, uint8_t d1, uint8_t d2, uint8_t flags) {
-    if (px->event_count >= DRUM_PFX_MAX_EVENTS) return;
+    if (px->event_count >= DRUM_PFX_MAX_EVENTS) {
+        /* see pfx_q_insert: an echo gives up its place for the lane's own */
+        if (pfx_ev_echo_on(s, d2, flags) || pfx_ev_echo_off(s, d2, flags)) return;
+        pfx_active_t *rec[1] = { &px->active_note };
+        if (!pfx_q_evict_echo(px->events, &px->event_count, rec, px->active_note.active ? 1 : 0)) {
+            if (flags & PFX_EV_BYPASS_SWING) { drum_pfx_emit(px, s, d1, d2); return; }
+            const uint8_t drain = g_inst ? g_inst->in_queue_drain : 0;
+            if (g_inst) g_inst->in_queue_drain = 1;
+            drum_pfx_send(px, s, d1, d2);
+            if (g_inst) g_inst->in_queue_drain = drain;
+            return;
+        }
+    }
     int lo = 0, hi = px->event_count;
     while (lo < hi) {
         int mid = (lo + hi) >> 1;
