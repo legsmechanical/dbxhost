@@ -376,9 +376,10 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         /* an echo not yet sounded goes silently, with its off; one sounding
          * is cut now (pfx_retrig_drop) — its off used to go for every queued
          * echo, and the one due at the hit's end then cut a later hit */
+        /* the lane's one record has just ended above, its echoes' offs all
+         * queued: no record to forget a waiting one in */
         uint8_t offs[DRUM_PFX_MAX_EVENTS][2];
-        pfx_active_t *rec[1] = { an };
-        const int no = pfx_retrig_drop(px->events, &px->event_count, rec, an->active ? 1 : 0, offs);
+        const int no = pfx_retrig_drop(px->events, &px->event_count, NULL, 0, offs);
         int qi;
         for (qi = 0; qi < no; qi++) if (offs[qi][1] != 0xFF) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
     }
