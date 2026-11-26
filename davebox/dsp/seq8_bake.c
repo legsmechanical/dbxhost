@@ -103,7 +103,9 @@ static int bake_same_pitch(bake_note_t *out, int oc, int out_max, int n_src, con
                 nt.tick = (uint32_t)start[p];
                 nt.gate = (uint16_t)(len > 65535 ? 65535 : len);
                 res[rn++] = nt;
-            } else if (wrapped && cyc && len >= (int64_t)cyc && start[p] < lo && ev[i].tick > lo && rn < BAKE_BUF) {
+            } else if (wrapped && cyc && len > (int64_t)cyc && start[p] < lo && ev[i].tick > lo && rn < BAKE_BUF) {
+                /* (exactly one loop is the previous pass's image of a note
+                 * this pass already wrote: not again) */
                 /* held a whole loop or more, from passes before into this one:
                  * a looping clip cannot hold a note past its own next pass, so
                  * it lasts the whole loop, from where it started */
@@ -314,7 +316,8 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
                     if (t2 < src_end) t2 = src_end;
                     for (j = 0; j < in_count; j++) {
                         uint32_t tj = in[j].tick;
-                        while (tj <= src_end || tj < drop_tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
+                        /* a strike on the very tick the note ends drains it too */
+                        while (tj < src_end || tj < drop_tick) { if (!clip_ticks) { tj = UINT32_MAX; break; } tj += clip_ticks; }
                         if (tj < t2) { t2 = tj; s2 = j; }
                     }
                 }

@@ -11,6 +11,7 @@
  *   D9  under SEQ ARP a fixed-Gate echo rings to its note's end
  *   D10 a wrapped multi-loop bake wraps its last loop's tail to the start
  *   D11 the same key struck again while sounding restrikes (no merge)
+ *   D12 a note held exactly one loop is written once
  * Sequential hx instances only — the stub host is process-global. */
 #include "harness.h"
 
@@ -246,6 +247,30 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- D12: a note held exactly one loop (restruck on its key each
+     * pass) is written once, not twice: 60@24, gate past the 96-tick loop. */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t1_c0_step_0_toggle", "40 100");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        cl->note_count = 0; cl->ticks_per_step = 24; cl->length = 4; cl->loop_start = 0;
+        clip_insert_note(cl, 24, 200, 60, 90);
+        clip_build_steps_from_notes(cl);
+    }
+    hx_set_param(h, "t1_c0_pfx_set", "delay_level 127");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_repeats 1");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_pitch_fb 7");
+    hx_set_param(h, "t1_c0_pfx_set", "delay_retrig 1");
+    hx_set_param(h, "bake", "1 0 0 1 0 1");
+    {
+        clip_t *cl = &inst->tracks[1].clips[0];
+        int n60 = 0;
+        for (int i = 0; i < cl->note_count; i++) n60 += cl->notes[i].pitch == 60;
+        HX_ASSERT(n60 == 1, "D12: a note held one loop is written once");
+    }
+    hx_destroy(h);
+
     /* ---- A3: a phrase starts as playback starts it (arp_tick): Sync off
      * fires on the note (ruled 2026-11-21), Sync on waits for the rate
      * boundary; either way the Arp Steps column re-anchors there. A note at
@@ -297,6 +322,6 @@ int main(void) {
     }
     hx_destroy(h);
 
-    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, D9 arp echo, D10 multi-loop tail, D11 restrike, A3 phrase start)\n");
+    printf("PASS: bake_parity (D1 retrigger, D5 primary-delta, D7 echo length, D8 same-tick echo, D9 arp echo, D10 multi-loop tail, D11 restrike, D12 one-loop note, A3 phrase start)\n");
     return 0;
 }
