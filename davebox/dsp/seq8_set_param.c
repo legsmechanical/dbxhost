@@ -16,9 +16,7 @@ static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr
      * floor — voices held on a Move instrument, with nothing on screen to
      * explain it. */
     if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {
-        int ei;
-        for (ei = 0; ei < fx->event_count; ei++)
-            fx->events[ei].fire_at = fx->sample_counter;
+        pfx_q_keep_offs_due(fx->events, &fx->event_count, fx->sample_counter);
         memset(fx->active_notes, 0, sizeof(fx->active_notes));
     } else {
         pfx_q_drop_keep_offs(fx);       /* the queued note-offs go NOW */
@@ -392,9 +390,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
         silence_track_notes_v2(inst, &inst->tracks[t]);
         /* Effective route — see silence_track_from_set_param. */
         if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {
-            int ei;
-            for (ei = 0; ei < fx->event_count; ei++)
-                fx->events[ei].fire_at = fx->sample_counter;
+            pfx_q_keep_offs_due(fx->events, &fx->event_count, fx->sample_counter);
             memset(fx->active_notes, 0, sizeof(fx->active_notes));
         } else {
             /* Chain / external: a note whose gate is still running has its
@@ -402,6 +398,25 @@ static void ext_transport_stop(seq8_instance_t *inst) {
              * synth holding it (stop mid-gate on a chain synth = hung note). */
             pfx_q_drop_keep_offs(fx);
             memset(fx->active_notes, 0, sizeof(fx->active_notes));
+        }
+        /* each drum lane's echo queue the same way: left alone, its echoes
+         * played on in time after Stop */
+        {
+            int l;
+            for (l = 0; l < DRUM_LANES; l++) {
+                drum_pfx_t *px = &inst->tracks[t].drum_lane_pfx[l];
+                if (midi_dest_resolve(px->route, px->slot, px->midi_to).route == ROUTE_MOVE) {
+                    pfx_q_keep_offs_due(px->events, &px->event_count, px->sample_counter);
+                } else {
+                    int ei;
+                    for (ei = 0; ei < px->event_count; ei++) {
+                        uint8_t st = px->events[ei].msg[0] & 0xF0;
+                        if (st == 0x80 || (st == 0x90 && px->events[ei].msg[2] == 0))
+                            drum_pfx_emit(px, px->events[ei].msg[0], px->events[ei].msg[1], 0);
+                    }
+                    px->event_count = 0;
+                }
+            }
         }
         inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
         if (inst->tracks[t].clip_playing) {

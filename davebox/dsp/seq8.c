@@ -4099,6 +4099,23 @@ static void pfx_q_fire(play_fx_t *fx, uint64_t now) {
  * voices need that); the other routes deliver immediately, so the offs go
  * now, direct to the output (pfx_emit: no arp/looper hooks, refcount-gated
  * like any other off), and everything else in the queue is discarded. */
+/* A queue a Stop (or a silence from set_param) ends, for a Move route: the
+ * note-offs stay, all due now, and the note-ons still to come go. An inject
+ * from set_param does not release Move's voices, so the offs go out from the
+ * next render's drain; moving the ons to "now" too played every echo still to
+ * come at once. */
+static void pfx_q_keep_offs_due(pfx_event_t *ev, int *count, uint64_t now) {
+    int n = 0;
+    for (int i = 0; i < *count; i++) {
+        uint8_t st = ev[i].msg[0] & 0xF0;
+        if (st == 0x80 || (st == 0x90 && ev[i].msg[2] == 0)) {
+            ev[n] = ev[i];
+            ev[n++].fire_at = now;
+        }
+    }
+    *count = n;
+}
+
 static void pfx_q_drop_keep_offs(play_fx_t *fx) {
     for (int i = 0; i < fx->event_count; i++) {
         uint8_t st = fx->events[i].msg[0] & 0xF0;
