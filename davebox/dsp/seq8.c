@@ -655,6 +655,11 @@ typedef struct {
      * in buffer because latch is on). Used by the tarp_latch off handler to drop
      * latched entries while preserving still-held ones. Unused by SEQ ARP. */
     uint8_t  held_physical[ARP_MAX_HELD];
+    /* How many sources hold each entry's pitch (two notes, or a note and a
+     * harmony, can give the same pitch). SEQ ARP lets go with
+     * arp_release_note, which drops the pitch only when the last one ends.
+     * TARP removes outright (arp_remove_note). */
+    uint8_t  held_refs[ARP_MAX_HELD];
     uint8_t  held_count;
     uint8_t  next_order;
 
@@ -2763,6 +2768,7 @@ static inline void pfx_set_gate_override(seq8_instance_t *inst, seq8_track_t *tr
 /* Forward decls — arp engine and scale_transpose defined further down. */
 static void arp_add_note     (arp_engine_t *a, uint8_t pitch, uint8_t vel);
 static void arp_remove_note  (arp_engine_t *a, uint8_t pitch);
+static void arp_release_note (arp_engine_t *a, uint8_t pitch);
 static void arp_silence      (seq8_instance_t *inst, seq8_track_t *tr);
 static int  scale_transpose  (seq8_instance_t *inst, int note, int deg_offset);
 static int  note_abs_degree  (seq8_instance_t *inst, int note);
@@ -3210,7 +3216,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
                 return;
             }
             if (is_off) {
-                arp_remove_note(&fx->arp, d1);
+                arp_release_note(&fx->arp, d1);
                 /* A note that went out before the arp came on: its off must
                  * reach the instrument, or it hangs. */
                 if (!(fx->arp_bypass_on[d1 >> 3] & bit)) return;
@@ -4993,6 +4999,7 @@ static void tarp_drop_latched(seq8_instance_t *inst, seq8_track_t *tr) {
                 a->held_vel[w]      = a->held_vel[r];
                 a->held_order[w]    = a->held_order[r];
                 a->held_physical[w] = a->held_physical[r];
+                a->held_refs[w]     = a->held_refs[r];
             }
             w++;
         }
@@ -5002,6 +5009,7 @@ static void tarp_drop_latched(seq8_instance_t *inst, seq8_track_t *tr) {
         a->held_vel[r]      = 0;
         a->held_order[r]    = 0;
         a->held_physical[r] = 0;
+        a->held_refs[r]     = 0;
     }
     a->held_count = (uint8_t)w;
 

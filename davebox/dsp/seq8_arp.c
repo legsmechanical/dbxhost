@@ -13,12 +13,17 @@
 static void arp_add_note(arp_engine_t *a, uint8_t pitch, uint8_t vel) {
     int i;
     for (i = 0; i < a->held_count; i++)
-        if (a->held_pitch[i] == pitch) { a->held_vel[i] = vel; return; }
+        if (a->held_pitch[i] == pitch) {
+            a->held_vel[i] = vel;
+            if (a->held_refs[i] < 255) a->held_refs[i]++;
+            return;
+        }
     if (a->held_count >= ARP_MAX_HELD) return;
     int was_empty = (a->held_count == 0);
     a->held_pitch[a->held_count] = pitch;
     a->held_vel[a->held_count]   = vel;
     a->held_order[a->held_count] = a->next_order++;
+    a->held_refs[a->held_count]  = 1;
     a->held_count++;
     if (was_empty) {
         /* Buffer 0→1: arm a fire on next rate boundary. cyc_pos / step_pos
@@ -42,9 +47,11 @@ static void arp_remove_note(arp_engine_t *a, uint8_t pitch) {
         a->held_vel[i]      = a->held_vel[i + 1];
         a->held_order[i]    = a->held_order[i + 1];
         a->held_physical[i] = a->held_physical[i + 1];
+        a->held_refs[i]     = a->held_refs[i + 1];
     }
     a->held_count--;
     a->held_physical[a->held_count] = 0;
+    a->held_refs[a->held_count]     = 0;
     if (a->held_count == 0) {
         /* Buffer empty — let the sounding note play out its own gate via
          * arp_tick countdown. Don't reset cycle position; consecutive
@@ -52,6 +59,17 @@ static void arp_remove_note(arp_engine_t *a, uint8_t pitch) {
         a->pending_first_note = 0;
         a->next_order         = 0;
     }
+}
+
+/* SEQ ARP: one source of this pitch ends. The pitch stays held while
+ * another source still holds it. */
+static void arp_release_note(arp_engine_t *a, uint8_t pitch) {
+    for (int i = 0; i < a->held_count; i++)
+        if (a->held_pitch[i] == pitch) {
+            if (a->held_refs[i] > 1) { a->held_refs[i]--; return; }
+            break;
+        }
+    arp_remove_note(a, pitch);
 }
 
 /* Drop all held notes, silence sounding, and reset cycle state.

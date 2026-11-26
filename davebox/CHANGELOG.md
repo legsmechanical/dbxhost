@@ -26,6 +26,9 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **SEQ ARP keeps a pitch two notes share**: when two notes gave the arp the same pitch (a
+  harmony landing on another note, say), the first to end took the pitch away from the other, live
+  and baked. The pitch now stays until the last note holding it ends.
 - **SEQ ARP plays DELAY's echoes with Sync on**: most echoes fed into a synced arp went silent, and how
   many you heard changed with the tempo.
 - **Many DELAY repeats no longer hang or drop notes**: a busy pattern with lots of echoes could fill

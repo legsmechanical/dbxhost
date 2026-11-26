@@ -354,7 +354,7 @@ static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t cli
         /* Note-offs */
         for (ni = 0; ni < in_count; ni++) {
             if ((uint32_t)(in[ni].tick + in[ni].gate) == tick)
-                arp_remove_note(&a, in[ni].pitch);
+                arp_release_note(&a, in[ni].pitch);
         }
         if (a.held_count == 0) continue;
 
