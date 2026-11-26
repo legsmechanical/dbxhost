@@ -252,8 +252,12 @@ static hx_t *setup(int seed, int bake, char *desc, size_t dn) {
 int main(int argc, char **argv) {
     const int s0 = argc > 1 ? atoi(argv[1]) : 1, s1 = argc > 2 ? atoi(argv[2]) : 150;
     int fails = 0; long cmp = 0;
-    for (int run = 0; run < 3 * (s1 - s0 + 1); run++) {
-        const int seed = s0 + run / 3;
+    /* seeds past the default range, always run: 539, a chord whose two notes'
+     * echoes meet on one pitch on one tick (the queue's order decides) */
+    static const int extra[] = { 539 };
+    const int base = 3 * (s1 - s0 + 1), nx = argc > 1 ? 0 : (int)(sizeof extra / sizeof *extra);
+    for (int run = 0; run < base + 3 * nx; run++) {
+        const int seed = run < base ? s0 + run / 3 : extra[(run - base) / 3];
         g_drum = run % 3 == 1;
         g_wide = run % 3 == 2;                     /* a second melodic pass, wide */
         /* drum lanes only on request (BEL_KIND=1): a drum echo repeats its
