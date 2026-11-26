@@ -367,6 +367,9 @@ static void arp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
 }
 
 /* Per master tick — called once per render-tick per track from render_block. */
+/* Ticks past a Sync grid point that a first note still takes it (see arp_tick):
+ * one block late is up to two ticks at fast tempos. Every rate is 12 or more. */
+#define ARP_SYNC_GRACE 2u
 static void arp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
     play_fx_t    *fx = &tr->pfx;
     arp_engine_t *a  = &fx->arp;
@@ -402,10 +405,18 @@ static void arp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         uint16_t rate = ARP_RATE_TICKS[a->rate_idx];
         if (rate == 0) rate = 24;
         if (fx->seq_arp_sync) {
-            if ((inst->arp_master_tick % rate) == 0) {
-                a->master_anchor      = inst->arp_master_tick;
+            /* On the grid point — or a tick or two past it: a note due ON the
+             * point that came from the echo queue (a DELAY echo) fires at the
+             * next block's start, after this point's tick already ran, and
+             * waiting a whole step lost most echoes (each ended first; how
+             * many depended on the tempo). It takes the point it missed, a
+             * moment late, and the steps after stay on the grid. */
+            const uint32_t pos = inst->arp_master_tick % rate;
+            if (pos <= ARP_SYNC_GRACE) {
+                a->master_anchor      = inst->arp_master_tick - pos;
                 a->pending_first_note = 0;
                 arp_fire_step(inst, tr);
+                a->ticks_until_next  -= (int32_t)pos;
             }
         } else {
             /* Sync off = FREE: start on the note, as LIVE ARP does (ruled

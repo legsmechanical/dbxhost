@@ -26,6 +26,8 @@ the section into a versioned heading at release time.
   clips?" as the Move does, and a Move instrument another track already plays is refused.
 
 ### Fixed
+- **SEQ ARP plays DELAY's echoes with Sync on**: most echoes fed into a synced arp went silent, and how
+  many you heard changed with the tempo.
 - **Many DELAY repeats no longer hang or drop notes**: a busy pattern with lots of echoes could fill
   a track's echo memory, and then a note could ring on forever or, with swing, never play. Now the
   latest echoes give way instead.

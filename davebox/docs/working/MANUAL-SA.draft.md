@@ -1313,7 +1313,7 @@ SEQ ARP is an arpeggiator that runs after DELAY, on both sequenced and live note
 | 4 · GATE | Note length. Under 100 % shortens, over lengthens. | 100 % |
 | 5 · STEPS | How silenced steps behave: rest (Mute) or skip (Step). | Mute |
 | 6 · RETRG | Restarts the arp on each new note. | On |
-| 7 · SYNC | Waits for the next rate boundary. Off starts on the note. | On |
+| 7 · SYNC | Waits for the next rate boundary (a note a moment late still takes the one just passed). Off starts on the note. | On |
 
 The extra octaves set by OCT join the notes the style orders. For example, Down with OCT at +1 plays from the top octave down.
 
