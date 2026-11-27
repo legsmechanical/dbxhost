@@ -204,7 +204,7 @@ static void bake_post_finish(seq8_instance_t *inst, int t, int c, int loops, int
                 on = bake_stage_midi_dly(inst, scale_aware, 0, &fx, total, wrap ? UINT32_MAX : total,
                                          in_buf, in_n, out_buf, cap);
             else
-                on = bake_stage_arp_out(inst, &fx, total, in_buf, in_n, out_buf, cap);
+                on = bake_stage_arp_out(inst, &fx, total, in_buf, in_n, out_buf, cap, 0);
             { bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp; }
             in_n = on;
         }
@@ -412,7 +412,7 @@ static void bake_post_finish_drum(seq8_instance_t *inst, int t, int c, int loops
             if (BAKE_STAGES[si] == BAKE_STAGE_MIDI_DLY)
                 on = bake_stage_midi_dly(inst, scale_aware, 0, &fx, total, wrap ? UINT32_MAX : total, in_buf, in_n, out_buf, lcap);
             else
-                on = bake_stage_arp_out(inst, &fx, total, in_buf, in_n, out_buf, lcap);
+                on = bake_stage_arp_out(inst, &fx, total, in_buf, in_n, out_buf, lcap, 0);
             { bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp; }
             in_n = on;
         }

@@ -313,15 +313,103 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
     return oc;
 }
 
+/* One tick of the baked arp, after this tick's notes are in: the step it
+ * plays here, if any (bake_stage_arp_out). */
+static void bake_arp_fire(seq8_instance_t *inst, play_fx_t *fx, arp_engine_t *a, uint16_t rate,
+                          uint32_t tick, uint32_t master_tick, bake_note_t *out, int *oc, int out_max) {
+    if (a->held_count == 0) return;
+
+    if (a->pending_first_note) {
+        /* A phrase begins (nothing was held), as arp_tick starts one: Sync
+         * waits for the clock's rate boundary (the clock restarts with the
+         * transport: the clip's top), free starts on the note (ruled
+         * 2026-11-21); either way the Arp Steps column re-anchors there. */
+        if (fx->seq_arp_sync && (master_tick % rate) != 0) return;
+        a->master_anchor = master_tick;
+        a->pending_first_note = 0;
+        /* fall through to fire */
+    } else {
+        a->ticks_until_next--;
+        if (a->ticks_until_next > 0) return;
+    }
+
+    /* Compute step_pos from master position */
+    uint32_t mp = master_tick - a->master_anchor;
+    a->step_pos  = (uint8_t)((mp / rate) % a->step_loop_len);
+    uint8_t slevel = a->step_vel[a->step_pos];
+    if (a->steps_mode == 0) slevel = 255;   /* Off mode: treat as Thru */
+    int step_off   = (a->steps_mode != 0) && (slevel == 0);
+
+    if (step_off && a->steps_mode == 2) {
+        a->ticks_until_next = (int32_t)rate;
+        return;
+    }
+    uint8_t pitch, vel;
+    if (!step_off && arp_compute_step(a, fx, &pitch, &vel)) {
+        /* ABSOLUTE step velocity, Thru (255) = incoming — mirrors arp_fire_step. */
+        int v = (int)vel;
+        if (a->steps_mode != 0 && slevel >= 1 && slevel <= 127)
+            v = (int)slevel;
+        if (v < 1) v = 1; if (v > 127) v = 127;
+        /* Arp Steps per-step interval offset (scale-degree), as in arp_fire_step. */
+        if (a->step_int[a->step_pos])
+            pitch = (uint8_t)scale_transpose(inst, (int)pitch, (int)a->step_int[a->step_pos]);
+        uint32_t gate = ((uint32_t)rate * a->gate_pct) / 100u;
+        if (gate < 1) gate = 1;
+        if (a->gate_pct <= 100 && gate >= rate) gate = rate - 1;   /* as arp_fire_step */
+        /* Above 100 %: a same-pitch note still ringing ends at this one
+         * (the legato hand-over arp_fire_step makes). */
+        {
+            int pi;
+            for (pi = (*oc) - 1; pi >= 0 && pi >= (*oc) - 2; pi--) {
+                if (out[pi].pitch == pitch && out[pi].tick + out[pi].gate > tick)
+                    out[pi].gate = (uint16_t)(tick - out[pi].tick);
+            }
+        }
+        if (*oc < out_max)
+            out[(*oc)++] = (bake_note_t){ tick, (uint16_t)gate, pitch, (uint8_t)v, pitch };
+    } else if (step_off) {
+        /* Mute mode: advance cycle */
+        uint8_t dp, dv;
+        arp_compute_step(a, fx, &dp, &dv);
+    }
+    a->cycle_step_count++;
+    a->ticks_until_next = (int32_t)rate;
+}
+
+/* steady: this cycle is the loop as it plays over and over (a wrapped
+ * cycle). The arp then runs two passes, every note folded into the cycle, and
+ * the second is kept: what is held over the loop point, echoes landing past
+ * the end, and Retrigger off's place in the pattern carry in from the pass
+ * before, as they do live. Run alone, the arp started each pass empty and the
+ * top of the loop lost its steps. */
 static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t clip_ticks,
                                const bake_note_t *in, int in_count,
-                               bake_note_t *out, int out_max) {
+                               bake_note_t *out, int out_max, int steady) {
     int n, i;
     if (fx->arp.style == 0) {
         n = in_count < out_max ? in_count : out_max;
         for (i = 0; i < n; i++) out[i] = in[i];
         return n;
     }
+    static bake_note_t two[2 * BAKE_BUF], got[2 * BAKE_BUF];
+    const bake_note_t *src = in;
+    bake_note_t *dst = out;
+    int dst_max = out_max;
+    uint32_t keep_from = 0;
+    if (steady && clip_ticks) {
+        int k = 0;
+        for (int pass = 0; pass < 2; pass++)
+            for (i = 0; i < in_count && k < 2 * BAKE_BUF; i++) {
+                two[k] = in[i];
+                two[k++].tick = in[i].tick % clip_ticks + (uint32_t)pass * clip_ticks;
+            }
+        src = two; in_count = k;
+        dst = got; dst_max = 2 * BAKE_BUF;
+        keep_from = clip_ticks;
+        clip_ticks *= 2;
+    }
+    in = src;
     /* Tick-by-tick ARP simulation. Retrigger always ON for bake. */
     arp_engine_t a;
     memset(&a, 0, sizeof(a));
@@ -342,8 +430,18 @@ static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t cli
     int oc = 0;
     uint32_t master_tick = 0, tick;
     for (tick = 0; tick < clip_ticks; tick++, master_tick++) {
+        /* A note ending on this tick lets go AFTER the arp's step here, as
+         * playback's does (its note-off is queued for the gate's end and goes
+         * out after the tick's arp step) — unless a note starts on this tick:
+         * its note-on sends what is due first, so then the off goes before
+         * the on. Releasing first lost the step a note ends on. */
+        int ni, has_on = 0;
+        for (ni = 0; ni < in_count && !has_on; ni++) has_on = in[ni].tick == tick;
+        if (has_on)
+            for (ni = 0; ni < in_count; ni++)
+                if ((uint32_t)(in[ni].tick + in[ni].gate) == tick)
+                    arp_release_note(&a, in[ni].pitch);
         /* Note-ons */
-        int ni;
         for (ni = 0; ni < in_count; ni++) {
             if (in[ni].tick != tick) continue;
             int was_empty = (a.held_count == 0);
@@ -351,69 +449,17 @@ static int bake_stage_arp_out(seq8_instance_t *inst, play_fx_t *fx, uint32_t cli
             if (was_empty || a.retrigger)
                 arp_retrigger(&a, master_tick);
         }
-        /* Note-offs */
-        for (ni = 0; ni < in_count; ni++) {
-            if ((uint32_t)(in[ni].tick + in[ni].gate) == tick)
-                arp_release_note(&a, in[ni].pitch);
-        }
-        if (a.held_count == 0) continue;
-
-        if (a.pending_first_note) {
-            /* A phrase begins (nothing was held), as arp_tick starts one: Sync
-             * waits for the clock's rate boundary (the clock restarts with the
-             * transport: the clip's top), free starts on the note (ruled
-             * 2026-11-21); either way the Arp Steps column re-anchors there. */
-            if (fx->seq_arp_sync && (master_tick % rate) != 0) continue;
-            a.master_anchor = master_tick;
-            a.pending_first_note = 0;
-            /* fall through to fire */
-        } else {
-            a.ticks_until_next--;
-            if (a.ticks_until_next > 0) continue;
-        }
-
-        /* Compute step_pos from master position */
-        uint32_t mp = master_tick - a.master_anchor;
-        a.step_pos  = (uint8_t)((mp / rate) % a.step_loop_len);
-        uint8_t slevel = a.step_vel[a.step_pos];
-        if (a.steps_mode == 0) slevel = 255;   /* Off mode: treat as Thru */
-        int step_off   = (a.steps_mode != 0) && (slevel == 0);
-
-        if (step_off && a.steps_mode == 2) {
-            a.ticks_until_next = (int32_t)rate;
-            continue;
-        }
-        uint8_t pitch, vel;
-        if (!step_off && arp_compute_step(&a, fx, &pitch, &vel)) {
-            /* ABSOLUTE step velocity, Thru (255) = incoming — mirrors arp_fire_step. */
-            int v = (int)vel;
-            if (a.steps_mode != 0 && slevel >= 1 && slevel <= 127)
-                v = (int)slevel;
-            if (v < 1) v = 1; if (v > 127) v = 127;
-            /* Arp Steps per-step interval offset (scale-degree), as in arp_fire_step. */
-            if (a.step_int[a.step_pos])
-                pitch = (uint8_t)scale_transpose(inst, (int)pitch, (int)a.step_int[a.step_pos]);
-            uint32_t gate = ((uint32_t)rate * a.gate_pct) / 100u;
-            if (gate < 1) gate = 1;
-            if (a.gate_pct <= 100 && gate >= rate) gate = rate - 1;   /* as arp_fire_step */
-            /* Above 100 %: a same-pitch note still ringing ends at this one
-             * (the legato hand-over arp_fire_step makes). */
-            {
-                int pi;
-                for (pi = oc - 1; pi >= 0 && pi >= oc - 2; pi--) {
-                    if (out[pi].pitch == pitch && out[pi].tick + out[pi].gate > tick)
-                        out[pi].gate = (uint16_t)(tick - out[pi].tick);
-                }
-            }
-            if (oc < out_max)
-                out[oc++] = (bake_note_t){ tick, (uint16_t)gate, pitch, (uint8_t)v, pitch };
-        } else if (step_off) {
-            /* Mute mode: advance cycle */
-            uint8_t dp, dv;
-            arp_compute_step(&a, fx, &dp, &dv);
-        }
-        a.cycle_step_count++;
-        a.ticks_until_next = (int32_t)rate;
+        bake_arp_fire(inst, fx, &a, rate, tick, master_tick, dst, &oc, dst_max);
+        if (!has_on)
+            for (ni = 0; ni < in_count; ni++)
+                if ((uint32_t)(in[ni].tick + in[ni].gate) == tick)
+                    arp_release_note(&a, in[ni].pitch);
+    }
+    if (dst != out) {                              /* steady: the second pass, back to the cycle */
+        int kept = 0;
+        for (i = 0; i < oc && kept < out_max; i++)
+            if (dst[i].tick >= keep_from) { out[kept] = dst[i]; out[kept++].tick -= keep_from; }
+        return kept;
     }
     return oc;
 }
@@ -630,7 +676,7 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
                 out_count = bake_stage_arp_out(inst, &fx, cycle_ticks,
-                                               in_buf, in_count, out_buf, BAKE_BUF);
+                                               in_buf, in_count, out_buf, BAKE_BUF, wrapped);
             bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp;
             in_count = out_count;
         }
@@ -988,7 +1034,7 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
                 out_count = bake_stage_arp_out(inst, &fx, cycle_ticks,
-                                               in_buf, in_count, out_buf, BAKE_BUF);
+                                               in_buf, in_count, out_buf, BAKE_BUF, wrap && loop == effectiveLoops - 1);
             bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp;
             in_count = out_count;
         }
@@ -1170,7 +1216,7 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
                                                     in_buf, in_count, out_buf, BAKE_BUF);
                 else
                     out_count = bake_stage_arp_out(inst, &fx, cycle_ticks,
-                                                   in_buf, in_count, out_buf, BAKE_BUF);
+                                                   in_buf, in_count, out_buf, BAKE_BUF, 0);
                 bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp;
                 in_count = out_count;
             }
@@ -1397,7 +1443,7 @@ static int render_drum_lane_nd(seq8_instance_t *inst, int t, int c, int lane,
                                                 in_buf, in_count, out_buf, BAKE_BUF);
             else
                 out_count = bake_stage_arp_out(inst, &fx, cycle_ticks,
-                                               in_buf, in_count, out_buf, BAKE_BUF);
+                                               in_buf, in_count, out_buf, BAKE_BUF, 0);
             bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp;
             in_count = out_count;
         }
@@ -1573,7 +1619,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
                                                     in_buf, in_count, out_buf, BAKE_BUF);
                 else
                     out_count = bake_stage_arp_out(inst, &fx, cycle_ticks,
-                                                   in_buf, in_count, out_buf, BAKE_BUF);
+                                                   in_buf, in_count, out_buf, BAKE_BUF, 0);
                 bake_note_t *tmp = in_buf; in_buf = out_buf; out_buf = tmp;
                 in_count = out_count;
             }
