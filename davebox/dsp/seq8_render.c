@@ -854,15 +854,7 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                         }
                         inst->swing_step_delay = _rp_held; inst->park_explicit = _rp_held_x;
                         /* Push to play_pending for the sub-hit's own gate countdown */
-                        if (tr->play_pending_count < 32) {
-                            int _pi = (int)tr->play_pending_count;
-                            tr->play_pending[_pi].pitch           = _rp_pitch;
-                            tr->play_pending[_pi].src_pitch       = _rp_pitch;
-                            tr->play_pending[_pi].ticks_remaining = _rp_gate;
-                            tr->play_pending[_pi].lane_idx        = _rp_lane;
-                            tr->play_pending_count++;
-                            tr->note_active = 1;
-                        }
+                        pp_push(inst, tr, _rp_pitch, _rp_pitch, _rp_gate, _rp_lane);
                         /* Drop slot via swap-and-pop */
                         tr->ratchet_pending[rp] = tr->ratchet_pending[tr->ratchet_pending_count - 1];
                         tr->ratchet_pending_count--;
@@ -1099,14 +1091,7 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                                 ? (uint16_t)(dlc->ticks_per_step / _ratch)
                                 : (uint16_t)eff_gate;
                             if (_sub_gate < 1) _sub_gate = 1;
-                            if (tr->play_pending_count < 32) {
-                                tr->play_pending[tr->play_pending_count].pitch           = lane_note;
-                                tr->play_pending[tr->play_pending_count].src_pitch       = lane_note;
-                                tr->play_pending[tr->play_pending_count].ticks_remaining = _sub_gate;
-                                tr->play_pending[tr->play_pending_count].lane_idx        = (uint8_t)l;
-                                tr->play_pending_count++;
-                                tr->note_active = 1;
-                            }
+                            pp_push(inst, tr, lane_note, lane_note, _sub_gate, (uint8_t)l);
                             drum_pfx_note_on(inst, tr, dpx, lane_note, _gvel);
                             if (_ratch > 1) {
                                 int _k;
@@ -1205,15 +1190,7 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                             ? (uint16_t)(cl->ticks_per_step / _ratch)
                             : (uint16_t)eff_gate;
                         if (_sub_gate < 1) _sub_gate = 1;
-                        if (tr->play_pending_count < 32) {
-                            int pp_idx = (int)tr->play_pending_count;
-                            tr->play_pending[pp_idx].pitch          = emit_pitch;
-                            tr->play_pending[pp_idx].src_pitch       = n->pitch;
-                            tr->play_pending[pp_idx].ticks_remaining = _sub_gate;
-                            tr->play_pending[pp_idx].lane_idx        = 0xFF;
-                            tr->play_pending_count++;
-                            tr->note_active = 1;
-                        }
+                        pp_push(inst, tr, emit_pitch, n->pitch, _sub_gate, 0xFF);
                         /* A Slicer's hit carries its step's own Dir / pitch,
                          * a remix's on top, and a remixed ROLL repeat's level —
                          * to the chop's next hit (au_track_t.nm_*) */

@@ -782,6 +782,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 #define MAX_NOTES_PER_CLIP  512
+#define PLAY_PENDING_MAX    64    /* notes a track ends at their gate (a full list makes room: pp_push) */
 
 typedef struct {
     uint32_t tick;               /* absolute clip tick 0..clip_len*TPS-1 */
@@ -1128,7 +1129,7 @@ typedef struct {
     struct { uint8_t pitch; uint32_t tick_at_on; int16_t groove_shift; } fx_pending[16];
     uint8_t  fx_pending_count;
     /* Note-centric playback: per-note gate countdown (render state, not persisted) */
-    struct { uint8_t pitch; uint16_t ticks_remaining; uint8_t lane_idx; uint8_t src_pitch; } play_pending[32];
+    struct { uint8_t pitch; uint16_t ticks_remaining; uint8_t lane_idx; uint8_t src_pitch; } play_pending[PLAY_PENDING_MAX];
     uint8_t  play_pending_count;
     /* v=34 Ratchet: deferred note-on schedule for step_ratchet sub-hits 1..r-1.
      * Each tick, ticks_until_fire decrements; at 0 the sub-hit fires (note-on +
@@ -2412,6 +2413,7 @@ static int  clip_insert_note(clip_t *cl, uint32_t tick, uint16_t gate, uint8_t p
 static void clip_migrate_to_notes(clip_t *cl);
 static void clip_build_steps_from_notes(clip_t *cl);
 static void silence_track_notes_v2(seq8_instance_t *inst, seq8_track_t *tr);
+static void pp_push(seq8_instance_t *inst, seq8_track_t *tr, uint8_t pitch, uint8_t src_pitch, uint16_t ticks, uint8_t lane);
 static void post_release_all(seq8_instance_t *inst, seq8_track_t *tr);
 static void clip_pfx_params_init(clip_pfx_params_t *p);
 /* v=34 trig conditions — defined after effective_note_tick */
@@ -5340,14 +5342,7 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
             /* Schedule note-off: half the step interval */
             uint16_t gate = rate / 2;
             if (gate < 1) gate = 1;
-            if (tr->play_pending_count < 32) {
-                tr->play_pending[tr->play_pending_count].pitch            = pitch;
-                tr->play_pending[tr->play_pending_count].src_pitch        = pitch;
-                tr->play_pending[tr->play_pending_count].ticks_remaining  = gate;
-                tr->play_pending[tr->play_pending_count].lane_idx         = lane;
-                tr->play_pending_count++;
-                tr->note_active = 1;
-            }
+            pp_push(inst, tr, pitch, pitch, gate, lane);
         }
     }
 
@@ -5487,14 +5482,7 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
             }
             uint16_t gate = rate / 2;
             if (gate < 1) gate = 1;
-            if (tr->play_pending_count < 32) {
-                tr->play_pending[tr->play_pending_count].pitch           = pitch;
-                tr->play_pending[tr->play_pending_count].src_pitch       = pitch;
-                tr->play_pending[tr->play_pending_count].ticks_remaining = gate;
-                tr->play_pending[tr->play_pending_count].lane_idx        = (uint8_t)l;
-                tr->play_pending_count++;
-                tr->note_active = 1;
-            }
+            pp_push(inst, tr, pitch, pitch, gate, (uint8_t)l);
         }
 advance_l:
         tr->drum_repeat2_phase[l]++;
@@ -11706,6 +11694,28 @@ static void silence_track_notes_v2(seq8_instance_t *inst, seq8_track_t *tr) {
     tarp_silence(inst, tr);
     /* SEQ ARP: drop held buffer + silence any sounding emitted note. */
     arp_silence(inst, tr);
+}
+
+/* A note the track ends at its gate: into play_pending. A full list ends the
+ * note nearest its own end now to make room — a note played with no entry
+ * never got its note-off. */
+static void pp_push(seq8_instance_t *inst, seq8_track_t *tr, uint8_t pitch, uint8_t src_pitch, uint16_t ticks, uint8_t lane) {
+    if (tr->play_pending_count >= PLAY_PENDING_MAX) {
+        int pp, v = 0;
+        for (pp = 1; pp < (int)tr->play_pending_count; pp++)
+            if (tr->play_pending[pp].ticks_remaining < tr->play_pending[v].ticks_remaining) v = pp;
+        if (tr->pad_mode == PAD_MODE_DRUM && tr->play_pending[v].lane_idx != 0xFF)
+            drum_pfx_note_off(inst, tr, &tr->drum_lane_pfx[tr->play_pending[v].lane_idx], tr->play_pending[v].pitch);
+        else
+            pfx_note_off(inst, tr, tr->play_pending[v].pitch);
+        tr->play_pending[v] = tr->play_pending[--tr->play_pending_count];
+    }
+    const int i = (int)tr->play_pending_count++;
+    tr->play_pending[i].pitch           = pitch;
+    tr->play_pending[i].src_pitch       = src_pitch;
+    tr->play_pending[i].ticks_remaining = ticks;
+    tr->play_pending[i].lane_idx        = lane;
+    tr->note_active = 1;
 }
 
 /* Start gate for step s and fire a single note ni immediately.
