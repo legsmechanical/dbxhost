@@ -33,6 +33,21 @@ static uint16_t bake_drum_hit_len(uint32_t g, int gate_time) {
     return (uint16_t)(g > 65535u ? 65535u : g);
 }
 
+/* A baked drum lane keeps its Gate %, so a hit shorter than 12 ticks stays
+ * short (with Gate back at 100 % ruling A8 holds every hit to 12 ticks). A
+ * note that sounded `len` ticks is written as the gate that Gate % plays back
+ * at that length: the smallest g with g x Gate % >= len, as
+ * compute_effective_gate_ticks rounds. Below the lane's own floor (12 x
+ * Gate %) the floor is what plays either way, live and baked. */
+static uint16_t bake_drum_gate_for(uint32_t len, int gate_time) {
+    if (gate_time <= 0 || len < 1) return (uint16_t)(len < 1 ? 1 : len > 65535u ? 65535u : len);
+    uint32_t g = (len * 100u + (uint32_t)gate_time / 2u) / (uint32_t)gate_time;
+    if (g < 1) g = 1;
+    while (g > 1 && ((g - 1) * (uint32_t)gate_time + 50u) / 100u >= len) g--;
+    while ((g * (uint32_t)gate_time + 50u) / 100u < len && g < 65535u) g++;
+    return (uint16_t)(g > 65535u ? 65535u : g);
+}
+
 /* Same-pitch notes as playback sounds them (melodic, SEQ ARP off). The output
  * keeps a count per pitch: a note-on of a pitch already sounding is swallowed,
  * and the pitch ends only when its count falls to 0 — overlapping notes of a
@@ -1252,10 +1267,11 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
         for (ri = 0; ri < total_out; ri++) {
             bake_note_t *bn = &dl_out[ri];
             if (bn->tick < total_ticks)
-                clip_insert_note(cl, bn->tick, bn->gate, dl->midi_note, bn->vel);
+                clip_insert_note(cl, bn->tick, bake_drum_gate_for(bn->gate, fx.gate_time), dl->midi_note, bn->vel);
         }
         clip_build_steps_from_notes(cl);
         drum_pfx_params_init(&dl->pfx_params);
+        dl->pfx_params.gate_time = fx.gate_time;    /* kept: the lengths above are written for it */
     }
     if (c == (int)tr->active_clip)
         drum_pfx_apply_params(&tr->drum_lane_pfx[lane],
@@ -1657,7 +1673,10 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
 
     { char _bl[64]; snprintf(_bl, sizeof(_bl), "bake_drum_clip pool=%d", pool_count); seq8_ilog(inst, _bl); }
 
-    /* Pass 2: clear all lanes, reset pfx_params, set new length, route pool notes */
+    /* Pass 2: clear all lanes, reset pfx_params (each lane's Gate % kept:
+     * bake_drum_gate_for), set new length, route pool notes */
+    int keep_g[DRUM_LANES];
+    for (l = 0; l < DRUM_LANES; l++) keep_g[l] = tr->drum_clips[c]->lanes[l].pfx_params.gate_time;
     for (l = 0; l < DRUM_LANES; l++) {
         drum_lane_t *dl2 = &tr->drum_clips[c]->lanes[l];
         clip_t *cl = &dl2->clip;
@@ -1665,6 +1684,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
         cl->ticks_per_step = ref_tps;
         cl->length = new_length;
         drum_pfx_params_init(&dl2->pfx_params);
+        dl2->pfx_params.gate_time = keep_g[l];
     }
     if (c == (int)tr->active_clip)
         pfx_sync_from_clip(tr);
@@ -1676,7 +1696,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
             for (l = 0; l < DRUM_LANES; l++) {
                 drum_lane_t *dl = &tr->drum_clips[c]->lanes[l];
                 if (dl->midi_note == bn->pitch) {
-                    clip_insert_note(&dl->clip, bn->tick, bn->gate, bn->pitch, bn->vel);
+                    clip_insert_note(&dl->clip, bn->tick, bake_drum_gate_for(bn->gate, keep_g[l]), bn->pitch, bn->vel);
                     break;
                 }
             }
