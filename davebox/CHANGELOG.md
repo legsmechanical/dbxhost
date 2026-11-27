@@ -32,7 +32,18 @@ the section into a versioned heading at release time.
 - **SEQ ARP holds 32 notes (was 16)**: a big chord with harmonies gave it more than 16 pitches, and
   the rest never played. With more than 16 held, it plays fewer octave copies.
 - **Stop ends DELAY's echoes**: on a track routed to Move, every echo still to come played at once
-  as a chord when you pressed Stop; on a drum track, echoes kept playing in time after Stop.
+  as a chord when you pressed Stop; on a drum track, echoes kept playing in time after Stop, Restart
+  or Panic.
+- **Every note ends, however many play at once**: with more than 32 notes sounding on one track, the
+  extra ones never got a note-off and hung.
+- **Quantize plays a note in the loop's last half step**: at Quantize 100 it belongs at the top of the
+  next pass, and it never played at all.
+- **Baked SEQ ARP keeps its steps**: a note ending exactly on an arp step lost that step in the bake,
+  and a note held across the loop end (or echoes landing past it) lost the top of the loop.
+- **Bake keeps one note where a harmony lands on a pitch already sounding**: with DELAY off it wrote
+  two overlapping notes; playing, you hear one.
+- **A baked drum hit is as long as it plays**: at Gate above 100 % a short hit baked shorter than it
+  sounded.
 - **SEQ ARP's Play Order keeps its order on long runs**: after a few hundred notes with the arp never
   empty (echoes feeding it), the newest notes started playing first.
 - **SEQ ARP plays DELAY's echoes with Sync on**: most echoes fed into a synced arp went silent, and how
