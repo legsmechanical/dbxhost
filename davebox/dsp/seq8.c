@@ -11615,6 +11615,16 @@ static uint32_t effective_note_tick(const note_t *n, const clip_t *cl, int quant
     int32_t delta = (int32_t)n->tick - step_grid;
     int32_t eff_delta = (quantize >= 100) ? 0 : delta * (100 - quantize) / 100;
     int32_t eff_tick = step_grid + eff_delta;
+    /* A note in the loop window's last half step rounds to the window's end,
+     * which the playhead never reaches (it wraps to the start): it plays at
+     * the window's start, as the next pass's first step — as Bake writes it.
+     * It used to point past the window and never play. */
+    {
+        const int32_t ws = (int32_t)cl->loop_start * cl->ticks_per_step;
+        const int32_t wl = (int32_t)cl->length * cl->ticks_per_step;
+        if (wl > 0 && (int32_t)n->tick >= ws && (int32_t)n->tick < ws + wl && eff_tick >= ws + wl)
+            eff_tick -= wl;
+    }
     /* Wrap against storage extent, not window: n->tick is absolute within
      * [0, SEQ_STEPS*tps), and cct (the comparison value at fire time) is
      * also absolute. A length-bound wrap maps in-window notes at high
