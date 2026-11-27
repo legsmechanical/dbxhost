@@ -30,14 +30,19 @@ static int find(const cap_t *c, int on, int pitch, int occ) {
 
 typedef void (*setup_fn)(hx_t *h);
 
-/* Track 1, sixteen notes at velocity 100, two bars less a little. */
+/* Track 1, fifteen notes at velocity 100 (the 16th step empty), two passes,
+ * stopped in the gap the empty step leaves: Random moves a note up to half a
+ * slot (about 22 blocks) either way, and a note-on still parked when Stop
+ * comes is dropped, so the run must end after the second pass's last note
+ * (step 15 + 22 blocks, its note-off 22 later) and before the third pass's
+ * first can come early (its start - 22). */
 static void run(setup_fn setup, cap_t *out) {
     char k[48], v[48];
     hx_t *h = hx_create(NULL);
     HX_ASSERT(h, "create failed");
     hx_set_param(h, "bpm", "120");
     hx_set_bpm(h, 120.0f);
-    for (int s = 0; s < 16; s++) {
+    for (int s = 0; s < 15; s++) {
         snprintf(k, sizeof(k), "t1_c0_step_%d_toggle", s);
         snprintf(v, sizeof(v), "%d 100", 48 + s);
         hx_set_param(h, k, v);
@@ -47,7 +52,7 @@ static void run(setup_fn setup, cap_t *out) {
     if (setup) setup(h);
     hx_clear_capture(h);
     hx_set_param(h, "transport", "play_focus:1:0");
-    hx_render(h, 2 * 689 - 30);
+    hx_render(h, 2 * 689 - 35);
     hx_set_param(h, "transport", "stop");
     hx_render(h, 200);
     collect(out);
@@ -117,7 +122,7 @@ int main(void) {
         int early = 0, late = 0, moved = 0;
         run(s_rnd_full, &B);
         HX_ASSERT(B.n == A.n, "Random adds or loses no notes");
-        for (int s = 0; s < 16; s++) for (int o = 0; o < 2; o++) {
+        for (int s = 0; s < 15; s++) for (int o = 0; o < 2; o++) {
             int ia = find(&A, 1, 48 + s, o), ib = find(&B, 1, 48 + s, o);
             HX_ASSERT(ia >= 0 && ib >= 0, "rig: every note plays");
             int d = B.ev[ib].block - A.ev[ia].block;
@@ -129,8 +134,7 @@ int main(void) {
             /* length kept */
             int la = A.ev[find(&A, 0, 48 + s, o)].block - A.ev[ia].block;
             int lb = B.ev[find(&B, 0, 48 + s, o)].block - B.ev[ib].block;
-            /* (not the last two notes: the stop cuts them, wherever they landed) */
-            if (o == 0 || s < 14) HX_ASSERT(lb - la >= -1 && lb - la <= 1, "Random resized a note");
+            HX_ASSERT(lb - la >= -1 && lb - la <= 1, "Random resized a note");
         }
         HX_ASSERT(moved >= 20, "Random 100 left most notes where they were");
         HX_ASSERT(early >= 3 && late >= 3, "Random moves notes both ways");
@@ -139,14 +143,14 @@ int main(void) {
 
         run(s_rnd_half, &B);
         moved = 0;
-        for (int s = 0; s < 16; s++) {
+        for (int s = 0; s < 15; s++) {
             int d = B.ev[find(&B, 1, 48 + s, 1)].block - A.ev[find(&A, 1, 48 + s, 1)].block;
             HX_ASSERT(d >= -12 && d <= 12, "Random 50 reaches a quarter of a slot, no more");
             if (d) moved++;
         }
         HX_ASSERT(moved >= 6, "Random 50 moved almost nothing");
         run(s_rnd_amt, &B);
-        for (int s = 0; s < 16; s++) {
+        for (int s = 0; s < 15; s++) {
             int d = B.ev[find(&B, 1, 48 + s, 1)].block - A.ev[find(&A, 1, 48 + s, 1)].block;
             HX_ASSERT(d >= -12 && d <= 12, "the groove's amount scales Random's reach too");
         }
