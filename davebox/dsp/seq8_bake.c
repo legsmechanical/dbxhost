@@ -23,6 +23,16 @@ typedef struct {
 
 #define BAKE_BUF  MAX_NOTES_PER_CLIP
 
+/* A drum hit's length as playback sounds it: its own gate, or 12 ticks x the
+ * lane's Gate %, whichever is longer (drum_pfx_note_off holds the off to
+ * that; ruled intended, A8) — a ratchet's sub-hit too. Bake wrote the gate
+ * alone, so a short hit baked shorter than it plays. As Flatten (fl_wi_note). */
+static uint16_t bake_drum_hit_len(uint32_t g, int gate_time) {
+    const uint32_t lg = (GATE_TICKS * (uint32_t)gate_time + 50u) / 100u;
+    if (lg > g) g = lg;
+    return (uint16_t)(g > 65535u ? 65535u : g);
+}
+
 /* Same-pitch notes as playback sounds them (melodic, SEQ ARP off). The output
  * keeps a count per pitch: a note-on of a pitch already sounding is swallowed,
  * and the pitch ends only when its count falls to 0 — overlapping notes of a
@@ -1193,6 +1203,7 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
                 uint16_t _sub_interval = (_ratch > 1) ? (uint16_t)(tps / _ratch) : 0;
                 uint16_t _final_gate   = (_ratch > 1) ? (_sub_interval ? _sub_interval : 1)
                                                       : (uint16_t)gate;
+                _final_gate = bake_drum_hit_len(_final_gate, fx.gate_time);   /* ruling A8 */
                 int ei, _k;
                 for (ei = 0; ei < emit_count && a_count < BAKE_BUF; ei++) {
                     uint32_t eff_tick = bake_apply_quantize(emit_ticks[ei], tps, cycle_steps, fx.quantize);
@@ -1421,6 +1432,7 @@ static int render_drum_lane_nd(seq8_instance_t *inst, int t, int c, int lane,
             uint16_t _sub_interval = (_ratch > 1) ? (uint16_t)(tps / _ratch) : 0;
             uint16_t _final_gate   = (_ratch > 1) ? (_sub_interval ? _sub_interval : 1)
                                                   : (uint16_t)gate;
+            _final_gate = bake_drum_hit_len(_final_gate, fx.gate_time);   /* ruling A8 */
             int ei, _k;
             for (ei = 0; ei < emit_count && a_count < BAKE_BUF; ei++) {
                 uint32_t eff_tick = bake_apply_quantize(emit_ticks[ei], tps, cycle_steps, fx.quantize);
@@ -1595,6 +1607,7 @@ static void bake_drum_clip(seq8_instance_t *inst, int t, int c, int loops, int w
                 uint16_t _sub_interval = (_ratch > 1) ? (uint16_t)(tps / _ratch) : 0;
                 uint16_t _final_gate   = (_ratch > 1) ? (_sub_interval ? _sub_interval : 1)
                                                       : (uint16_t)gate;
+                _final_gate = bake_drum_hit_len(_final_gate, fx.gate_time);   /* ruling A8 */
                 int ei, _k, gi;
                 for (ei = 0; ei < emit_count && a_count < BAKE_BUF; ei++) {
                     uint32_t eff_tick = bake_apply_quantize(emit_ticks[ei], tps, cycle_steps, fx.quantize);
