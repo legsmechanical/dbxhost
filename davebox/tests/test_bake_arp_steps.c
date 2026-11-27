@@ -3,7 +3,7 @@
  * off goes out after the tick's step), the bake released first and lost it.
  * (B) A note held across the loop end: live keeps arpeggiating it at the top
  * of the loop, the bake started each pass with the arp empty. (C) Echoes
- * landing past the loop end feed the arp at the top too. Live is the clip's
+ * landing past the loop end feed the arp at the top too, (D) even two loops on. Live is the clip's
  * third pass; the bake is a wrapped one-loop bake. A step a tick apart is
  * the same step. */
 #include "pfx_rig.h"
@@ -73,6 +73,9 @@ int main(void) {
     { N n[] = { { 0, 48, 60 }, { 96, 12, 64 } };  bad += one("A, a note ending on an arp step", n, 2, up16); }
     { N n[] = { { 144, 96, 60 } };                bad += one("B, a note held across the loop end", n, 1, up16); }
     { N n[] = { { 144, 20, 58 } };                bad += one("C, echoes landing past the loop end", n, 1, echo); }
+    { static const char *const echo12[] = { "seq_arp_style 1", "seq_arp_rate 1", "delay_level 127", "delay_repeats 12",
+                                            "delay_time 5", "delay_pitch_fb -1", "delay_retrig 0", NULL };
+      N n[] = { { 144, 20, 70 } };                bad += one("D, echoes landing two loops on", n, 1, echo12); }
     HX_ASSERT(bad == 0, "a baked SEQ ARP plays the steps live plays");
     printf("PASS: bake arp steps\n");
     return 0;
