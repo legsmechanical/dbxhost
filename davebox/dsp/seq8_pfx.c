@@ -141,10 +141,14 @@ static int pfx_build_gen_notes(seq8_instance_t *inst, int scale_aware,
 
 /* A fixed-Gate echo waits for its note's end to send its off, as every echo
  * did before (see pfx_sched_delay_ons), when it is on a pitch its own note
- * sounds (pitch feedback 0, a harmony copy's pitch, any Audio echo), or while
- * SEQ ARP takes the track's notes: the arp holds notes by pitch, uncounted,
- * so an echo's early off would drop that pitch even while another note of
- * the track still holds it. */
+ * sounds (pitch feedback 0, a harmony copy's pitch, any Audio echo: an early
+ * off would cut the Audio slice; elsewhere the held pitch sounds on anyway),
+ * or while SEQ ARP takes the track's notes: the arp plays what it holds on
+ * its own steps, and an echo held only its short Gate leaves before a step
+ * reaches it — waiting keeps the echoes in the pattern while the note is
+ * held. (The arp counts the sources of a pitch since arp_release_note, so
+ * an early off no longer drops a pitch another note holds; that is not why
+ * it waits.) */
 static int pfx_echo_waits(const play_fx_t *fx, const pfx_active_t *an, int note) {
     int j;
     if (fx->arp.style != 0 && !(g_inst && fx->track_idx < NUM_TRACKS &&
@@ -244,9 +248,9 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
         /* Its off is timed from its own (swung) on, so it can never go out
          * first. An echo on a pitch its note still holds keeps the old
          * timing (pfx_sched_delay_offs, at the note's end): the held pitch
-         * sounds on anyway, and an early off would take that pitch out of
-         * SEQ ARP's held notes, or cut an Audio slice (an Audio echo is
-         * silent and on its note's own pitch) — pfx_echo_waits. */
+         * sounds on anyway, and an early off would cut an Audio slice (an
+         * Audio echo is silent and on its note's own pitch); and under SEQ
+         * ARP every echo waits, so the arp's steps reach it — pfx_echo_waits. */
         const int fixed = an->reps[i].gate_factor < 0.0;
         uint64_t off = 0;
         if (fixed) {
