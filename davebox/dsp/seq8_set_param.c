@@ -6,6 +6,28 @@
  * pfx_send from set_param context doesn't release Move synth voices, so
  * for ROUTE_MOVE we reschedule queued note-offs to fire from render_block
  * and wipe active_notes (same pattern as transport stop). */
+/* Each drum lane's echo queue, ended as the melodic one is: the queued
+ * note-offs go (due now on a Move route, sent at once on the others) and the
+ * echoes still to come are dropped. Left alone, a drum lane's echoes played on
+ * in time after Stop, Restart or Panic. */
+static void drum_lanes_end_queues(seq8_track_t *tr) {
+    int l;
+    for (l = 0; l < DRUM_LANES; l++) {
+        drum_pfx_t *px = &tr->drum_lane_pfx[l];
+        if (midi_dest_resolve(px->route, px->slot, px->midi_to).route == ROUTE_MOVE) {
+            pfx_q_keep_offs_due(px->events, &px->event_count, px->sample_counter);
+        } else {
+            int ei;
+            for (ei = 0; ei < px->event_count; ei++) {
+                uint8_t st = px->events[ei].msg[0] & 0xF0;
+                if (st == 0x80 || (st == 0x90 && px->events[ei].msg[2] == 0))
+                    drum_pfx_emit(px, px->events[ei].msg[0], px->events[ei].msg[1], 0);
+            }
+            px->event_count = 0;
+        }
+    }
+}
+
 static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr) {
     play_fx_t *fx = &tr->pfx;
     post_release_all(inst, tr);          /* a POST module's notes, in it and out of it */
@@ -22,6 +44,7 @@ static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr
         pfx_q_drop_keep_offs(fx);       /* the queued note-offs go NOW */
         memset(fx->active_notes, 0, sizeof(fx->active_notes));
     }
+    drum_lanes_end_queues(tr);
 }
 
 /* Apply a play-effects key/value to a track's live pfx and to a caller-supplied
@@ -399,25 +422,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
             pfx_q_drop_keep_offs(fx);
             memset(fx->active_notes, 0, sizeof(fx->active_notes));
         }
-        /* each drum lane's echo queue the same way: left alone, its echoes
-         * played on in time after Stop */
-        {
-            int l;
-            for (l = 0; l < DRUM_LANES; l++) {
-                drum_pfx_t *px = &inst->tracks[t].drum_lane_pfx[l];
-                if (midi_dest_resolve(px->route, px->slot, px->midi_to).route == ROUTE_MOVE) {
-                    pfx_q_keep_offs_due(px->events, &px->event_count, px->sample_counter);
-                } else {
-                    int ei;
-                    for (ei = 0; ei < px->event_count; ei++) {
-                        uint8_t st = px->events[ei].msg[0] & 0xF0;
-                        if (st == 0x80 || (st == 0x90 && px->events[ei].msg[2] == 0))
-                            drum_pfx_emit(px, px->events[ei].msg[0], px->events[ei].msg[1], 0);
-                    }
-                    px->event_count = 0;
-                }
-            }
-        }
+        drum_lanes_end_queues(&inst->tracks[t]);
         inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
         if (inst->tracks[t].clip_playing) {
             inst->tracks[t].will_relaunch = 1;

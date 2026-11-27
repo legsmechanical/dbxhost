@@ -4,7 +4,8 @@
  * a drum lane's echo queue was not touched at all, so its echoes went on
  * playing in time after Stop. Now the queued note-offs go out and the queued
  * note-ons are dropped, melodic and drum, on every route. A note sounding at
- * the Stop still gets its note-off. */
+ * the Stop still gets its note-off. Restart and Panic end the drum lanes'
+ * echoes too (they share the silencer with a direction change). */
 #include "pfx_rig.h"
 
 /* track 1 melodic (60, long) or track 2 drum (lane 0), DELAY 1/16 x 3 */
@@ -71,6 +72,30 @@ static void run(int drum, const char *route, int *ons_after, int *offs_after) {
     hx_destroy(h);
 }
 
+/* play to tick 12, then Restart or Panic, then on for 90 ticks: a Restart
+ * plays the hit and its echoes again from 0 (on 0 24 48 72) and none of the
+ * old ones (due 12 36 60 after it); after a Panic nothing plays until the
+ * clip comes round. *n = the note-ons after, *off_grid of them off the
+ * 24-tick grid. */
+static void run2(int drum, const char *route, const char *verb, int *n, int *off_grid) {
+    hx_t *h = rig(drum, route);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    hx_clear_capture(h);
+    g_seen = 0; g_an = 0;
+    rig_play(h);
+    int guard = 400000;
+    while (inst->playing && rig_now(h) < 12 && guard-- > 0) { hx_render(h, 1); drain(g_a, &g_an, rig_now(h)); }
+    const int before = g_an;
+    hx_set_param(h, "transport", verb);
+    const uint32_t t0 = !strcmp(verb, "panic") ? rig_now(h) : 0;
+    guard = 400000;
+    while (inst->playing && rig_now(h) < t0 + 90 && guard-- > 0) { hx_render(h, 1); drain(g_a, &g_an, rig_now(h)); }
+    *n = *off_grid = 0;
+    for (int i = before; i < g_an; i++) if (g_a[i].kind == 0) { (*n)++; *off_grid += g_a[i].tick % 24 > 2; }
+    hx_set_param(h, "transport", "stop");
+    hx_destroy(h);
+}
+
 int main(void) {
     static const char *const routes[] = { "move", "schwung" };
     int bad = 0;
@@ -82,6 +107,17 @@ int main(void) {
         bad += ons != 0 || offs == 0;
     }
     HX_ASSERT(bad == 0, "Stop: no echo plays after it, and the held note gets its note-off");
+    int bad2 = 0;
+    for (int drum = 0; drum <= 1; drum++) for (int r = 0; r < 2; r++) {
+        int n, og;
+        run2(drum, routes[r], "restart", &n, &og);
+        printf("  %s, route %s, Restart: %d note-ons in the next 90 ticks (want 4), %d off the grid\n", drum ? "drum lane" : "melodic", routes[r], n, og);
+        bad2 += n != 4 || og;
+        run2(drum, routes[r], "panic", &n, &og);
+        printf("  %s, route %s, Panic: %d note-ons in the next 90 ticks (want 0)\n", drum ? "drum lane" : "melodic", routes[r], n);
+        bad2 += n != 0;
+    }
+    HX_ASSERT(bad2 == 0, "Restart and Panic end the echoes still to come");
     printf("PASS: stop ends echoes\n");
     return 0;
 }
