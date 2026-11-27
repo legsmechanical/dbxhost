@@ -143,17 +143,17 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware, int note_
     int oc = 0, ni;
     for (ni = 0; ni < in_count && oc < out_max; ni++)
         out[oc++] = in[ni];
-    if (fx->repeat_times <= 0 || fx->delay_level <= 0)
-        return oc;
-    int dclk_master = CLOCK_VALUES[fx->delay_time_idx] / 5; /* 480→96 PPQN */
-    if (dclk_master <= 0) return oc;
+    const int dclk_master = CLOCK_VALUES[fx->delay_time_idx] / 5; /* 480→96 PPQN */
+    const int echoes = fx->repeat_times > 0 && fx->delay_level > 0 && dclk_master > 0;
     /* melodic, SEQ ARP off: same-pitch notes merge as playback's output
-     * count merges them (bake_same_pitch) */
+     * count merges them (bake_same_pitch) — echoes or none: a HARMONY or
+     * NOTE FX copy landing on a pitch still sounding is one held note live,
+     * and was two overlapping notes baked with DELAY off */
     const int merge = note_gate && fx->arp.style == 0
                    && !(fx->track_idx < NUM_TRACKS && pad_mode_sampled(inst->tracks[fx->track_idx].pad_mode));
     static uint8_t paired[BAKE_BUF];               /* out[i]: a fixed-Gate echo whose off went with its on */
     memset(paired, 0, sizeof paired);
-    for (ni = 0; ni < in_count && oc < out_max; ni++) {
+    for (ni = 0; echoes && ni < in_count && oc < out_max; ni++) {
         int rep_vel     = (int)in[ni].vel * fx->delay_level / 127;
         int cumul_pitch = 0, cumul_deg = 0, fb_walk = 0;
         double cur_delay = (double)dclk_master, cumul = 0.0;
