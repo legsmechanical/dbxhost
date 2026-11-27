@@ -149,6 +149,21 @@ int main(void) {
         HX_ASSERT(last > 150, m);
         hx_destroy(h);
     }
+    /* SEQ ARP over a held note, echoes on other pitches with a short fixed
+     * Gate: they wait for the note's end too, or each leaves the arp before
+     * a step reaches it and the arp plays the note alone */
+    {
+        static const char *const set[] = { "delay_repeats 3", "delay_time 5", "delay_pitch_fb 3",
+                                           "seq_arp_style 1", "seq_arp_rate 1", NULL };
+        hx_t *h = one(0, 168, set);
+        play(h, 16, g_a, &g_an);
+        int echoes = 0;
+        for (int i = 0; i < g_an; i++) if (!g_a[i].kind && g_a[i].tick < 192 && g_a[i].a != 40) echoes++;
+        char m[96]; snprintf(m, sizeof m, "SEQ ARP, echoes on other pitches, Gate 1/64: the arp played %d of them", echoes);
+        printf("  %s\n", m);
+        HX_ASSERT(echoes >= 2, m);
+        hx_destroy(h);
+    }
     /* drum, swing at full: a hit late in an off-beat step, echoes 36 ticks
      * on, Gate 1/64 and the default — every echo ends after it starts (a
      * drum lane has no refcount: an off sent first leaves the echo ringing
