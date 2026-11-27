@@ -1587,7 +1587,7 @@ To bake a melodic clip:
 2. Choose the loop count: 1×, 2× or 4×.
 3. Choose whether to wrap the delay tails, for a seamless loop.
 
-On a drum clip, Bake first asks whether to bake the whole clip or just the selected lane.
+On a drum clip, Bake first asks whether to bake the whole clip or just the selected lane. Each lane keeps its Gate setting, so short hits stay as short as they played.
 
 To bake a scene, press [Sample] in Session View, choose Bake scene, choose the row, then make the same choices. Empty clips are skipped.
 

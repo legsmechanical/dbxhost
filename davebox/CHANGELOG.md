@@ -43,7 +43,8 @@ the section into a versioned heading at release time.
 - **Bake keeps one note where a harmony lands on a pitch already sounding**: with DELAY off it wrote
   two overlapping notes; playing, you hear one.
 - **A baked drum hit is as long as it plays**: at Gate above 100 % a short hit baked shorter than it
-  sounded.
+  sounded, and at Gate below 100 % a short hit played longer after the bake. A baked drum lane now
+  keeps its Gate.
 - **SEQ ARP's Play Order keeps its order on long runs**: after a few hundred notes with the arp never
   empty (echoes feeding it), the newest notes started playing first.
 - **SEQ ARP plays DELAY's echoes with Sync on**: most echoes fed into a synced arp went silent, and how
