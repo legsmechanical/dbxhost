@@ -22,13 +22,21 @@ static int run(int count) {
     rig_play(h);
     int guard = 400000;
     while (inst->playing && rig_now(h) < 300 && guard-- > 0) { hx_render(h, 1); drain(g_a, &g_an, rig_now(h)); }
-    int on[128] = { 0 }, ons = 0, hung = 0;
+    int on[128] = { 0 }, ons = 0, hung = 0, cut = 0;
+    uint32_t at[128] = { 0 };
     for (int i = 0; i < g_an; i++) {
-        if (g_a[i].kind == 0) { on[g_a[i].a]++; ons++; }
-        else if (g_a[i].kind == 3 && on[g_a[i].a] > 0) on[g_a[i].a]--;
+        if (g_a[i].kind == 0) { on[g_a[i].a]++; ons++; at[g_a[i].a] = g_a[i].tick; }
+        else if (g_a[i].kind == 3 && on[g_a[i].a] > 0) {
+            on[g_a[i].a]--;
+            /* the newest 64 keep their whole length (96 ticks); past 64 the
+             * oldest, nearest their end, make room */
+            const int idx = g_a[i].a - 30;
+            if (idx >= count - 64 && g_a[i].tick - at[g_a[i].a] + 1 < 96) cut++;
+        }
     }
     for (int p = 0; p < 128; p++) hung += on[p] > 0;
-    printf("  %d notes at once: %d played, %d never ended (before the Stop)\n", count, ons, hung);
+    printf("  %d notes at once: %d played, %d never ended, %d of the newest 64 cut short\n", count, ons, hung, cut);
+    hung += cut;
     HX_ASSERT(ons == count, "control: every note played");
     hx_set_param(h, "transport", "stop");
     hx_destroy(h);
